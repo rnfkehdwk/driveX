@@ -1,0 +1,14 @@
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #root { height: 100%; }
+body {
+  font-family: 'Noto Sans KR', -apple-system, sans-serif;
+  background: #f7f8fc;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+input, button, select, textarea { font-family: inherit; }
+::-webkit-scrollbar { width: 0; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.fade-in { animation: fadeIn 0.25s ease-out; }
