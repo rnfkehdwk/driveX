@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 기본 테마 -->
+    <style name="Theme.DriveLog" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:statusBarColor">#1a1a2e</item>
+        <item name="android:navigationBarColor">#1a1a2e</item>
+        <item name="android:windowBackground">#f7f8fc</item>
+    </style>
+
+    <!-- 스플래시 테마 -->
+    <style name="Theme.DriveLog.Splash" parent="Theme.DriveLog">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+    </style>
+</resources>

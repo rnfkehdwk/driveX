@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.drivelog.app",
+      "sha256_cert_fingerprints": [
+        "TODO: 여기에 서명 키 SHA-256 핑거프린트를 넣으세요"
+      ]
+    }
+  }
+]

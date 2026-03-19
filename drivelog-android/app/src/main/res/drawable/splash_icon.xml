@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 임시 스플래시 아이콘 - 나중에 실제 로고로 교체 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+    <!-- 배경 원 -->
+    <path
+        android:fillColor="#1a1a2e"
+        android:pathData="M64,64m-56,0a56,56 0,1 1,112 0a56,56 0,1 1,-112 0" />
+    <!-- D 글자 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,40 L44,88 L60,88 C76,88 88,76 88,64 C88,52 76,40 60,40 Z M52,48 L60,48 C72,48 80,54 80,64 C80,74 72,80 60,80 L52,80 Z" />
+</vector>
