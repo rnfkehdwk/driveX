@@ -1,12 +1,30 @@
 import { useState, useEffect } from 'react';
 import { fetchSettlements, generateSettlements, approveSettlement, paySettlement } from '../api/client';
 
+function useSortable() {
+  const [sortKey, setSortKey] = useState('');
+  const [sortDir, setSortDir] = useState('asc');
+  const toggle = (key) => { if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('asc'); } };
+  const icon = (key) => sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+  const sort = (arr) => {
+    if (!sortKey) return arr;
+    return [...arr].sort((a, b) => {
+      let va = a[sortKey], vb = b[sortKey];
+      if (va == null) va = ''; if (vb == null) vb = '';
+      if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va;
+      return sortDir === 'asc' ? String(va).localeCompare(String(vb), 'ko') : String(vb).localeCompare(String(va), 'ko');
+    });
+  };
+  return { toggle, icon, sort };
+}
+
 export default function Settlements() {
   const [data, setData] = useState({ data: [], summary: {} });
   const [month, setMonth] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; });
   const [genModal, setGenModal] = useState(false);
   const [genForm, setGenForm] = useState({ period_start: '', period_end: '' });
   const [loading, setLoading] = useState(false);
+  const { toggle, icon, sort } = useSortable();
 
   const load = () => fetchSettlements({ month }).then(setData).catch(() => {});
   useEffect(() => { load(); }, [month]);
@@ -14,22 +32,13 @@ export default function Settlements() {
   const handleGenerate = async () => {
     if (!genForm.period_start || !genForm.period_end) { alert('기간을 선택하세요.'); return; }
     setLoading(true);
-    try {
-      const res = await generateSettlements(genForm);
-      alert(res.message); setGenModal(false); load();
-    } catch (err) { alert(err.response?.data?.error || '생성 실패'); }
+    try { const res = await generateSettlements(genForm); alert(res.message); setGenModal(false); load(); }
+    catch (err) { alert(err.response?.data?.error || '생성 실패'); }
     finally { setLoading(false); }
   };
 
-  const handleApprove = async (id) => {
-    if (!confirm('이 정산을 승인하시겠습니까?')) return;
-    try { await approveSettlement(id); load(); } catch (err) { alert('승인 실패'); }
-  };
-
-  const handlePay = async (id) => {
-    if (!confirm('지급 완료 처리하시겠습니까?')) return;
-    try { await paySettlement(id); load(); } catch (err) { alert('지급 처리 실패'); }
-  };
+  const handleApprove = async (id) => { if (!confirm('승인하시겠습니까?')) return; try { await approveSettlement(id); load(); } catch { alert('실패'); } };
+  const handlePay = async (id) => { if (!confirm('지급 완료 처리?')) return; try { await paySettlement(id); load(); } catch { alert('실패'); } };
 
   const s = data.summary || {};
   const statusStyle = (st) => ({
@@ -38,6 +47,19 @@ export default function Settlements() {
     color: st === 'PAID' ? '#16a34a' : st === 'APPROVED' ? '#2563eb' : st === 'PENDING' ? '#d97706' : '#94a3b8',
   });
   const statusLabel = { DRAFT: '초안', PENDING: '대기', APPROVED: '승인', PAID: '지급완료', DISPUTED: '분쟁' };
+
+  const headers = [
+    { key: 'rider_name', label: '기사' },
+    { key: 'period_start', label: '기간' },
+    { key: null, label: '운행건수' },
+    { key: null, label: '총 운임' },
+    { key: null, label: '수수료' },
+    { key: null, label: '지급액' },
+    { key: null, label: '상태' },
+    { key: null, label: '승인일' },
+    { key: null, label: '관리' },
+  ];
+  const sorted = sort(data.data || []);
 
   return (
     <div className="fade-in">
@@ -53,7 +75,6 @@ export default function Settlements() {
         </button>
       </div>
 
-      {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 16 }}>
         {[
           { label: '총 운임', value: `${(s.total_fare || 0).toLocaleString()}원`, color: '#2563eb' },
@@ -67,18 +88,21 @@ export default function Settlements() {
         ))}
       </div>
 
-      {/* Table */}
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #f1f5f9', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              {['기사', '기간', '운행건수', '총 운임', '수수료', '지급액', '상태', '승인일', '관리'].map(h => (
-                <th key={h} style={{ padding: '11px 10px', textAlign: ['총 운임','수수료','지급액','운행건수'].includes(h) ? 'right' : 'left', fontWeight: 600, color: '#64748b', fontSize: 12, borderBottom: '1px solid #e2e8f0' }}>{h}</th>
+              {headers.map((h, i) => (
+                <th key={i} onClick={() => h.key && toggle(h.key)} style={{
+                  padding: '11px 10px', textAlign: ['총 운임','수수료','지급액','운행건수'].includes(h.label) ? 'right' : 'left',
+                  fontWeight: 600, color: '#64748b', fontSize: 12, borderBottom: '1px solid #e2e8f0',
+                  cursor: h.key ? 'pointer' : 'default', userSelect: 'none',
+                }}>{h.label}{h.key ? icon(h.key) : ''}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {(data.data || []).map(s => (
+            {sorted.map(s => (
               <tr key={s.settlement_id} style={{ borderBottom: '1px solid #f8fafc' }}>
                 <td style={{ padding: '11px 10px', fontWeight: 600 }}>{s.rider_name}</td>
                 <td style={{ padding: '11px 10px', fontSize: 12 }}>{s.period_start} ~ {s.period_end}</td>
@@ -96,12 +120,11 @@ export default function Settlements() {
                 </td>
               </tr>
             ))}
-            {(!data.data || data.data.length === 0) && <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>정산 내역이 없습니다.</td></tr>}
+            {sorted.length === 0 && <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>정산 내역이 없습니다.</td></tr>}
           </tbody>
         </table>
       </div>
 
-      {/* Generate Modal */}
       {genModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setGenModal(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 28, width: 400, boxShadow: '0 16px 48px rgba(0,0,0,0.15)' }}>

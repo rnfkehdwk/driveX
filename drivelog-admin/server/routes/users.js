@@ -93,7 +93,16 @@ router.post('/', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, r
 // PUT /api/users/:id - 사용자 수정
 router.put('/:id', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, res) => {
   try {
-    const allowed = ['name', 'phone', 'email', 'vehicle_number', 'vehicle_type', 'status'];
+    // MASTER는 company_id, role 포함 수정 가능
+    // SUPER_ADMIN은 role만 추가 수정 가능 (company_id 변경 불가)
+    const baseAllowed = ['name', 'phone', 'email', 'vehicle_number', 'vehicle_type', 'status', 'role'];
+    const allowed = req.user.role === 'MASTER' ? [...baseAllowed, 'company_id'] : baseAllowed;
+
+    // SUPER_ADMIN은 RIDER, SUPER_ADMIN만 설정 가능 (MASTER 권한 부여 방지)
+    if (req.user.role === 'SUPER_ADMIN' && req.body.role && !['RIDER', 'SUPER_ADMIN'].includes(req.body.role)) {
+      return res.status(403).json({ error: '허용되지 않는 권한입니다.' });
+    }
+
     const updates = [];
     const values = [];
 
@@ -103,7 +112,14 @@ router.put('/:id', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req,
     if (updates.length === 0) return res.status(400).json({ error: '수정할 항목이 없습니다.' });
 
     values.push(req.params.id);
-    await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE user_id = ?`, values);
+
+    // SUPER_ADMIN은 자기 업체 유저만 수정 가능
+    if (req.user.role === 'SUPER_ADMIN') {
+      values.push(req.user.company_id);
+      await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE user_id = ? AND company_id = ?`, values);
+    } else {
+      await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE user_id = ?`, values);
+    }
 
     writeAuditLog({
       company_id: req.user.company_id, user_id: req.user.user_id,

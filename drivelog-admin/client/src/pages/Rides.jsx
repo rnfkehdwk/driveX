@@ -2,6 +2,23 @@ import { useState, useEffect } from 'react';
 import { fetchRides } from '../api/client';
 import { exportToExcel, RIDE_COLUMNS } from '../utils/excel';
 
+function useSortable(initialKey = '', initialDir = 'asc') {
+  const [sortKey, setSortKey] = useState(initialKey);
+  const [sortDir, setSortDir] = useState(initialDir);
+  const toggle = (key) => { if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('asc'); } };
+  const icon = (key) => sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+  const sort = (arr) => {
+    if (!sortKey) return arr;
+    return [...arr].sort((a, b) => {
+      let va = a[sortKey], vb = b[sortKey];
+      if (va == null) va = ''; if (vb == null) vb = '';
+      if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va;
+      return sortDir === 'asc' ? String(va).localeCompare(String(vb), 'ko') : String(vb).localeCompare(String(va), 'ko');
+    });
+  };
+  return { sortKey, sortDir, toggle, icon, sort };
+}
+
 export default function Rides() {
   const [data, setData] = useState({ data: [], total: 0 });
   const [page, setPage] = useState(1);
@@ -11,6 +28,10 @@ export default function Rides() {
   });
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const { toggle, icon, sort } = useSortable();
+
+  const currentUser = (() => { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } })();
+  const isMaster = currentUser?.role === 'MASTER';
 
   useEffect(() => {
     setLoading(true);
@@ -20,8 +41,36 @@ export default function Rides() {
       .finally(() => setLoading(false));
   }, [page, limit, month, search]);
 
-  const headers = ['No','일자','시간','고객코드','고객','전화번호','이용금액','현금','M결제','M발생','출발지','도착지','운전기사','픽업기사','연결업체','업체전화','메모','상태'];
+  const sortableHeaders = [
+    { key: null, label: 'No' },
+    ...(isMaster ? [{ key: 'company_name', label: '소속업체' }] : []),
+    { key: 'ride_date', label: '일자' },
+    { key: 'ride_time', label: '시간' },
+    { key: null, label: '고객코드' },
+    { key: 'customer_name', label: '고객' },
+    { key: null, label: '전화번호' },
+    { key: null, label: '이용금액' },
+    { key: null, label: '현금' },
+    { key: null, label: 'M결제' },
+    { key: null, label: 'M발생' },
+    { key: null, label: '출발지' },
+    { key: null, label: '도착지' },
+    { key: 'rider_name', label: '운전기사' },
+    { key: null, label: '픽업기사' },
+    { key: null, label: '연결업체' },
+    { key: null, label: '업체전화' },
+    { key: null, label: '메모' },
+    { key: null, label: '상태' },
+  ];
+
+  const sorted = sort(data.data || []);
   const totalPages = Math.ceil(data.total / limit);
+
+  const thStyle = (h) => ({
+    padding: '11px 8px', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: 11,
+    borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', background: '#f8fafc', position: 'sticky', top: 0,
+    cursor: h.key ? 'pointer' : 'default', userSelect: 'none',
+  });
 
   return (
     <div className="fade-in">
@@ -63,17 +112,20 @@ export default function Rides() {
           <table>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {headers.map(h => (
-                  <th key={h} style={{ padding: '11px 8px', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: 11, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', background: '#f8fafc', position: 'sticky', top: 0 }}>{h}</th>
+                {sortableHeaders.map((h, i) => (
+                  <th key={i} style={thStyle(h)} onClick={() => h.key && toggle(h.key)}>
+                    {h.label}{h.key ? icon(h.key) : ''}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {(data.data || []).map((r, i) => (
+              {sorted.map((r, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid #f8fafc' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td style={{ padding: '10px 8px', fontSize: 12, color: '#94a3b8' }}>{r.ride_id}</td>
+                  {isMaster && <td style={{ padding: '10px 8px', fontSize: 12, fontWeight: 600 }}>{r.company_name || '-'}</td>}
                   <td style={{ padding: '10px 8px', fontSize: 12, whiteSpace: 'nowrap' }}>{(r.ride_date || '').slice(5)}</td>
                   <td style={{ padding: '10px 8px', fontSize: 12, color: '#2563eb' }}>{r.ride_time}</td>
                   <td style={{ padding: '10px 8px', fontSize: 12 }}>{r.customer_code || '-'}</td>
@@ -98,8 +150,8 @@ export default function Rides() {
                   </td>
                 </tr>
               ))}
-              {(!data.data || data.data.length === 0) && (
-                <tr><td colSpan={18} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>운행 기록이 없습니다.</td></tr>
+              {sorted.length === 0 && (
+                <tr><td colSpan={sortableHeaders.length} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>운행 기록이 없습니다.</td></tr>
               )}
             </tbody>
           </table>
