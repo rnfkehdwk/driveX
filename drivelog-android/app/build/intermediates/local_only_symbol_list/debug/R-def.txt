@@ -1,0 +1,15 @@
+R_DEF: Internal format may change without notice
+local
+bool enableNotification
+color backgroundColor
+color colorAccent
+color colorPrimary
+color colorPrimaryDark
+color white
+drawable splash_background
+drawable splash_icon
+mipmap ic_launcher
+mipmap ic_launcher_foreground
+string app_name
+style Theme.DriveLog
+style Theme.DriveLog.Splash

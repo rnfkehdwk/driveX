@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="enableNotification">true</bool>
+    <color name="backgroundColor">#f7f8fc</color>
+    <color name="colorAccent">#e94560</color>
+    <color name="colorPrimary">#1a1a2e</color>
+    <color name="colorPrimaryDark">#16162b</color>
+    <color name="white">#FFFFFF</color>
+    <string name="app_name">DriveLog</string>
+    <style name="Theme.DriveLog" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:statusBarColor">#1a1a2e</item>
+        <item name="android:navigationBarColor">#1a1a2e</item>
+        <item name="android:windowBackground">#f7f8fc</item>
+    </style>
+    <style name="Theme.DriveLog.Splash" parent="Theme.DriveLog">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+    </style>
+</resources>

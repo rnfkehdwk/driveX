@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "com.drivelog.app-merged_res-4:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "com.drivelog.app-main-6:/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.drivelog.app-merged_res-4:/mipmap-xxxhdpi_ic_launcher_foreground.png.flat",
+        "source": "com.drivelog.app-main-6:/mipmap-xxxhdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "com.drivelog.app-merged_res-4:/drawable_splash_icon.xml.flat",
+        "source": "com.drivelog.app-main-6:/drawable/splash_icon.xml"
+    },
+    {
+        "merged": "com.drivelog.app-merged_res-4:/drawable_splash_background.xml.flat",
+        "source": "com.drivelog.app-main-6:/drawable/splash_background.xml"
+    }
+]
