@@ -7,7 +7,10 @@ export default function Settings({ user, onLogout }) {
   const handleLogout = async () => {
     if (!confirm('로그아웃 하시겠습니까?')) return;
     try { await apiLogout(); } catch {}
-    localStorage.clear();
+    // 토큰과 유저 정보만 삭제 (로그인 저장 정보는 유지)
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
     onLogout();
     nav('/login');
   };
@@ -20,14 +23,10 @@ export default function Settings({ user, onLogout }) {
         <span onClick={() => nav('/')} style={{ fontSize: 18, cursor: 'pointer' }}>←</span>
         <span style={{ fontSize: 18, fontWeight: 800 }}>설정</span>
       </div>
-
       <div style={{ padding: 20 }}>
-        {/* Profile Card */}
         <div style={{ background: 'white', borderRadius: 20, padding: 24, marginBottom: 14, border: '1px solid #f1f5f9' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-            <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: 'white' }}>
-              {(user?.name || '?').charAt(0)}
-            </div>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: 'white' }}>{(user?.name || '?').charAt(0)}</div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 800 }}>{user?.name}</div>
               <div style={{ fontSize: 13, color: '#94a3b8' }}>{roleMap[user?.role] || user?.role}</div>
@@ -45,12 +44,10 @@ export default function Settings({ user, onLogout }) {
             </div>
           ))}
         </div>
-
-        {/* App Info */}
         <div style={{ background: 'white', borderRadius: 20, padding: 24, marginBottom: 14, border: '1px solid #f1f5f9' }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>앱 정보</div>
           {[
-            { label: '버전', value: 'v1.5.0' },
+            { label: '버전', value: 'v1.6.0' },
             { label: '빌드', value: 'PWA (React + Vite)' },
             { label: '서버', value: 'Express + MariaDB' },
           ].map((item, i) => (
@@ -60,12 +57,7 @@ export default function Settings({ user, onLogout }) {
             </div>
           ))}
         </div>
-
-        {/* Logout */}
-        <button onClick={handleLogout} style={{
-          width: '100%', padding: '16px 0', borderRadius: 14, border: '1.5px solid #fee2e2',
-          background: '#fef2f2', fontSize: 16, fontWeight: 700, color: '#dc2626', cursor: 'pointer',
-        }}>로그아웃</button>
+        <button onClick={handleLogout} style={{ width: '100%', padding: '16px 0', borderRadius: 14, border: '1.5px solid #fee2e2', background: '#fef2f2', fontSize: 16, fontWeight: 700, color: '#dc2626', cursor: 'pointer' }}>로그아웃</button>
       </div>
     </div>
   );

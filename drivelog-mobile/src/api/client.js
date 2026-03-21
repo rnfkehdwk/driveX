@@ -42,6 +42,9 @@ export const fetchCustomers = (p) => api.get('/customers', { params: p }).then(r
 export const createCustomer = (b) => api.post('/customers', b).then(r => r.data);
 
 // Partners
-export const fetchPartners = () => api.get('/partners').then(r => r.data);
+export const fetchPartners = (p) => api.get('/partners', { params: p }).then(r => r.data);
+
+// Payment Types (결제구분)
+export const fetchPaymentTypes = (p) => api.get('/payment-types', { params: p }).then(r => r.data);
 
 export default api;

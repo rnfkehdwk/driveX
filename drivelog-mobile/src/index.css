@@ -1,13 +1,14 @@
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body, #root { height: 100%; }
+html, body, #root { height: 100%; overflow-x: hidden; width: 100%; max-width: 100vw; }
 body {
   font-family: 'Noto Sans KR', -apple-system, sans-serif;
   background: #f7f8fc;
   color: #1e293b;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  overflow-x: hidden;
 }
-input, button, select, textarea { font-family: inherit; }
+input, button, select, textarea { font-family: inherit; box-sizing: border-box; }
 ::-webkit-scrollbar { width: 0; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

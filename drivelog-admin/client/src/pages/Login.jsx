@@ -1,29 +1,73 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../api/client';
 
 export default function Login({ onLogin }) {
   const [form, setForm] = useState({ company_code: '', login_id: '', password: '' });
+  const [saveId, setSaveId] = useState(false);
+  const [autoLogin, setAutoLogin] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  // 저장된 로그인 정보 불러오기
+  useEffect(() => {
     try {
-      const data = await login(form);
+      const saved = JSON.parse(localStorage.getItem('savedLoginInfo_admin'));
+      if (saved) {
+        setForm(f => ({ ...f, company_code: saved.company_code || '', login_id: saved.login_id || '' }));
+        setSaveId(true);
+      }
+      const isAutoLogin = localStorage.getItem('autoLogin_admin') === 'true';
+      setAutoLogin(isAutoLogin);
+
+      // 자동로그인 시도
+      if (isAutoLogin && saved?.company_code && saved?.login_id) {
+        const savedPw = localStorage.getItem('savedPw_admin');
+        if (savedPw) {
+          doLogin({ company_code: saved.company_code, login_id: saved.login_id, password: savedPw });
+        }
+      }
+    } catch {}
+  }, []);
+
+  const doLogin = async (loginForm) => {
+    setError(''); setLoading(true);
+    try {
+      const data = await login(loginForm);
       localStorage.setItem('accessToken', data.accessToken);
       localStorage.setItem('refreshToken', data.refreshToken);
       localStorage.setItem('user', JSON.stringify(data.user));
+
+      // 로그인 정보 저장
+      if (saveId || autoLogin) {
+        localStorage.setItem('savedLoginInfo_admin', JSON.stringify({
+          company_code: loginForm.company_code,
+          login_id: loginForm.login_id,
+        }));
+      } else {
+        localStorage.removeItem('savedLoginInfo_admin');
+      }
+
+      // 자동로그인
+      if (autoLogin) {
+        localStorage.setItem('autoLogin_admin', 'true');
+        localStorage.setItem('savedPw_admin', loginForm.password);
+      } else {
+        localStorage.setItem('autoLogin_admin', 'false');
+        localStorage.removeItem('savedPw_admin');
+      }
+
       onLogin(data.user);
       navigate('/');
     } catch (err) {
       setError(err.response?.data?.error || '로그인에 실패했습니다.');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await doLogin(form);
   };
 
   const inputStyle = {
@@ -31,6 +75,12 @@ export default function Login({ onLogin }) {
     fontSize: 15, outline: 'none', fontFamily: "'Noto Sans KR', sans-serif",
     transition: 'border-color 0.2s',
   };
+
+  const checkboxStyle = (checked) => ({
+    width: 18, height: 18, borderRadius: 5, border: `2px solid ${checked ? '#2563eb' : '#cbd5e1'}`,
+    background: checked ? '#2563eb' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s',
+  });
 
   return (
     <div style={{
@@ -63,12 +113,28 @@ export default function Login({ onLogin }) {
               onFocus={e => e.target.style.borderColor = '#2563eb'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
             />
           </div>
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 20 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 6 }}>비밀번호</label>
             <input style={inputStyle} type="password" placeholder="비밀번호" required
               value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
               onFocus={e => e.target.style.borderColor = '#2563eb'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
             />
+          </div>
+
+          {/* 로그인 정보 저장 + 자동 로그인 */}
+          <div style={{ display: 'flex', gap: 24, marginBottom: 20 }}>
+            <div onClick={() => { setSaveId(!saveId); if (autoLogin && saveId) setAutoLogin(false); }} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <div style={checkboxStyle(saveId)}>
+                {saveId && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+              </div>
+              <span style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>로그인 정보 저장</span>
+            </div>
+            <div onClick={() => { setAutoLogin(!autoLogin); if (!autoLogin) setSaveId(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <div style={checkboxStyle(autoLogin)}>
+                {autoLogin && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+              </div>
+              <span style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>자동 로그인</span>
+            </div>
           </div>
 
           {error && (

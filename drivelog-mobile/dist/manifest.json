@@ -2,15 +2,22 @@
   "name": "DriveLog - 운행일지",
   "short_name": "DriveLog",
   "description": "대리기사 운행 기록 & 정산 앱",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "/m/",
+  "scope": "/m/",
+  "id": "/m/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f7f8fc",
   "theme_color": "#1a1a2e",
+  "lang": "ko",
+  "dir": "ltr",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/m/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/m/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/m/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/m/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
-  "categories": ["business", "productivity"]
+  "screenshots": [],
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false
 }

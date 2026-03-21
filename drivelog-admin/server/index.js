@@ -18,6 +18,7 @@ const settlementsRoutes = require('./routes/settlements');
 const farePoliciesRoutes = require('./routes/farePolices');
 const billingRoutes = require('./routes/billing');
 const companiesRoutes = require('./routes/companies');
+const paymentTypesRoutes = require('./routes/paymentTypes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -32,7 +33,6 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 
-// Rate limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
   max: parseInt(process.env.RATE_LIMIT_MAX || '100'),
@@ -60,10 +60,11 @@ app.use('/api/settlements', settlementsRoutes);
 app.use('/api/fare-policies', farePoliciesRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/companies', companiesRoutes);
+app.use('/api/payment-types', paymentTypesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '1.5', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: '1.6', timestamp: new Date().toISOString() });
 });
 
 // ---- Serve React build (production) ----
@@ -73,17 +74,15 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(clientDist, 'index.html'));
 });
 
-// ---- Error handler ----
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: '서버 내부 오류가 발생했습니다.' });
 });
 
-// ---- Start ----
 async function start() {
   await testConnection();
   app.listen(PORT, () => {
-    console.log(`DriveLog Admin Server v1.5 running on http://localhost:${PORT}`);
+    console.log(`DriveLog Admin Server v1.6 running on http://localhost:${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 }
