@@ -13,6 +13,7 @@ import FarePolicies from './pages/FarePolicies';
 import Billing from './pages/Billing';
 import Companies from './pages/Companies';
 import PaymentTypes from './pages/PaymentTypes';
+import Permissions from './pages/Permissions';
 import { logout as apiLogout } from './api/client';
 
 const navGroups = [
@@ -35,6 +36,7 @@ const navGroups = [
     { path: '/partner-manage', label: '제휴업체관리', icon: '🤝', roles: ['MASTER', 'SUPER_ADMIN'] },
     { path: '/payment-types', label: '결제구분', icon: '💳', roles: ['MASTER', 'SUPER_ADMIN'] },
     { path: '/companies', label: '업체관리', icon: '🏢', roles: ['MASTER'] },
+    { path: '/permissions', label: '통합권한관리', icon: '🔐', roles: ['MASTER'] },
   ]},
 ];
 
@@ -52,7 +54,6 @@ export default function App() {
 
   const handleLogout = async () => {
     try { await apiLogout(); } catch {}
-    // 토큰과 유저 정보만 삭제 (로그인 저장 정보는 유지)
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
@@ -151,6 +152,7 @@ export default function App() {
           <Route path="/fare-policies" element={<Guard user={user}><FarePolicies /></Guard>} />
           <Route path="/billing" element={<Guard user={user}><Billing user={user} /></Guard>} />
           <Route path="/companies" element={<Guard user={user}><Companies /></Guard>} />
+          <Route path="/permissions" element={<Guard user={user}><Permissions /></Guard>} />
           <Route path="*" element={<Navigate to={user ? '/' : '/login'} />} />
         </Routes>
       </main>

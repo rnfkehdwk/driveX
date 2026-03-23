@@ -1,5 +1,4 @@
 require('dotenv').config();
-
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -7,7 +6,6 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { testConnection } = require('./config/database');
 
-// Routes
 const authRoutes = require('./routes/auth');
 const ridesRoutes = require('./routes/rides');
 const statsRoutes = require('./routes/stats');
@@ -17,39 +15,22 @@ const partnersRoutes = require('./routes/partners');
 const settlementsRoutes = require('./routes/settlements');
 const farePoliciesRoutes = require('./routes/farePolices');
 const billingRoutes = require('./routes/billing');
+const billingPlansRoutes = require('./routes/billingPlans');
 const companiesRoutes = require('./routes/companies');
 const paymentTypesRoutes = require('./routes/paymentTypes');
+const permissionsRoutes = require('./routes/permissions');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ---- Middleware ----
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? ['https://admin.drivelog.co.kr', 'https://biz.drivelog.co.kr']
-    : '*',
-  credentials: true,
-}));
+app.use(cors({ origin: process.env.NODE_ENV === 'production' ? ['https://admin.drivelog.co.kr', 'https://biz.drivelog.co.kr'] : '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
-  max: parseInt(process.env.RATE_LIMIT_MAX || '100'),
-  message: { error: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+const limiter = rateLimit({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), max: parseInt(process.env.RATE_LIMIT_MAX || '200'), message: { error: '요청이 너무 많습니다.' }, standardHeaders: true, legacyHeaders: false });
 app.use('/api/', limiter);
+app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: '로그인 시도가 너무 많습니다.' } }));
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: '로그인 시도가 너무 많습니다. 15분 후 다시 시도하세요.' },
-});
-app.use('/api/auth/login', loginLimiter);
-
-// ---- API Routes ----
 app.use('/api/auth', authRoutes);
 app.use('/api/rides', ridesRoutes);
 app.use('/api/stats', statsRoutes);
@@ -59,32 +40,20 @@ app.use('/api/partners', partnersRoutes);
 app.use('/api/settlements', settlementsRoutes);
 app.use('/api/fare-policies', farePoliciesRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/billing-plans', billingPlansRoutes);
 app.use('/api/companies', companiesRoutes);
 app.use('/api/payment-types', paymentTypesRoutes);
+app.use('/api/permissions', permissionsRoutes);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '1.6', timestamp: new Date().toISOString() });
-});
+app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '1.8', timestamp: new Date().toISOString() }); });
 
-// ---- Serve React build (production) ----
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(clientDist, 'index.html'));
-});
-
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: '서버 내부 오류가 발생했습니다.' });
-});
+app.get('*', (req, res) => { res.sendFile(path.join(clientDist, 'index.html')); });
+app.use((err, req, res, next) => { console.error('Unhandled error:', err); res.status(500).json({ error: '서버 내부 오류가 발생했습니다.' }); });
 
 async function start() {
   await testConnection();
-  app.listen(PORT, () => {
-    console.log(`DriveLog Admin Server v1.6 running on http://localhost:${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
+  app.listen(PORT, () => { console.log(`DriveLog Admin Server v1.8 running on http://localhost:${PORT}`); });
 }
-
 start();

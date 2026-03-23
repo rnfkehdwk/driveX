@@ -18,7 +18,7 @@ api.interceptors.response.use(r => r, async (err) => {
       localStorage.setItem('accessToken', data.accessToken);
       orig.headers.Authorization = `Bearer ${data.accessToken}`;
       return api(orig);
-    } catch { localStorage.clear(); window.location.href = '/login'; }
+    } catch { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); localStorage.removeItem('user'); window.location.href = '/m/login'; }
   }
   return Promise.reject(err);
 });
@@ -41,8 +41,10 @@ export const createUser = (b) => api.post('/users', b).then(r => r.data);
 export const fetchCustomers = (p) => api.get('/customers', { params: p }).then(r => r.data);
 export const createCustomer = (b) => api.post('/customers', b).then(r => r.data);
 
-// Partners
+// Partners (제휴업체)
 export const fetchPartners = (p) => api.get('/partners', { params: p }).then(r => r.data);
+export const createPartner = (b) => api.post('/partners', b).then(r => r.data);
+export const updatePartner = (id, b) => api.put(`/partners/${id}`, b).then(r => r.data);
 
 // Payment Types (결제구분)
 export const fetchPaymentTypes = (p) => api.get('/payment-types', { params: p }).then(r => r.data);

@@ -7,6 +7,7 @@ import RideList from './pages/RideList';
 import RiderNew from './pages/RiderNew';
 import CustomerNew from './pages/CustomerNew';
 import CustomerList from './pages/CustomerList';
+import PartnerList from './pages/PartnerList';
 import Settings from './pages/Settings';
 
 function Guard({ user, children }) {
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/rider/new" element={<Guard user={user}><RiderNew /></Guard>} />
         <Route path="/customer/new" element={<Guard user={user}><CustomerNew /></Guard>} />
         <Route path="/customer/list" element={<Guard user={user}><CustomerList /></Guard>} />
+        <Route path="/partner/list" element={<Guard user={user}><PartnerList /></Guard>} />
         <Route path="/settings" element={<Guard user={user}><Settings user={user} onLogout={handleLogout} /></Guard>} />
         <Route path="*" element={<Navigate to={user ? '/' : '/login'} />} />
       </Routes>
