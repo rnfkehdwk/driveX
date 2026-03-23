@@ -1,4 +1,7 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+const MOBILE_VERSION = __BUILD_TIME__ || 'dev';
 
 const ALL_MENUS = [
   { path: '/ride/new', label: '운행기록 작성', icon: '🚗', desc: 'GPS 출발/도착 + 요금 입력', color: '#2563eb', bg: '#eff6ff', roles: ['MASTER', 'SUPER_ADMIN', 'RIDER'] },
@@ -15,6 +18,11 @@ export default function Home({ user }) {
   const role = user?.role || 'RIDER';
   const menus = ALL_MENUS.filter(m => m.roles.includes(role));
   const roleLabel = { MASTER: '시스템 관리자', SUPER_ADMIN: '업체 관리자', RIDER: '운행기사' };
+  const [apiVersion, setApiVersion] = useState('');
+
+  useEffect(() => {
+    fetch('/api/health').then(r => r.json()).then(d => setApiVersion(d.version || '?')).catch(() => setApiVersion('?'));
+  }, []);
 
   return (
     <div className="fade-in" style={{ minHeight: '100vh', background: '#f7f8fc' }}>
@@ -27,6 +35,9 @@ export default function Home({ user }) {
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{user?.name}</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{roleLabel[role] || role}</div>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', marginTop: 4, fontFamily: 'monospace' }}>
+              M:{MOBILE_VERSION} API:{apiVersion}
+            </div>
           </div>
         </div>
       </div>

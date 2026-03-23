@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createRide, fetchRiders, fetchCustomers, fetchPartners, fetchPaymentTypes } from '../api/client';
+
+const DRAFT_KEY = 'rideDraft';
 
 function formatFare(val) {
   const num = val.replace(/[^0-9]/g, '');
@@ -41,6 +43,42 @@ function Field({ label, value, onChange, placeholder, type = 'text', icon, suffi
   );
 }
 
+// localStorage에서 임시저장 데이터 복원
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    // 24시간 이상 지난 임시저장은 삭제
+    if (draft._savedAt && Date.now() - draft._savedAt > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(DRAFT_KEY);
+      return null;
+    }
+    return draft;
+  } catch { return null; }
+}
+
+function saveDraft(form) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...form, _savedAt: Date.now() }));
+  } catch {}
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+}
+
+const defaultForm = {
+  started_at: '', ended_at: '',
+  start_address: '', start_detail: '', start_lat: null, start_lng: null,
+  end_address: '', end_detail: '', end_lat: null, end_lng: null,
+  pickup_rider_id: null, pickup_rider_name: '',
+  customer_id: null, customer_name: '', customer_phone: '',
+  partner_id: null, partner_name: '',
+  user_type: '',
+  total_fare: '', payment_method: 'CASH', rider_memo: '',
+};
+
 export default function RideNew({ user }) {
   const nav = useNavigate();
   const [riders, setRiders] = useState([]);
@@ -57,17 +95,32 @@ export default function RideNew({ user }) {
   const [pickupSearch, setPickupSearch] = useState('');
   const [manualCustomer, setManualCustomer] = useState(false);
   const [manualForm, setManualForm] = useState({ name: '', phone: '' });
+  const [restored, setRestored] = useState(false);
 
-  const [form, setForm] = useState({
-    started_at: '', ended_at: '',
-    start_address: '', start_detail: '', start_lat: null, start_lng: null,
-    end_address: '', end_detail: '', end_lat: null, end_lng: null,
-    pickup_rider_id: null, pickup_rider_name: '',
-    customer_id: null, customer_name: '', customer_phone: '',
-    partner_id: null, partner_name: '',
-    user_type: '',
-    total_fare: '', payment_method: 'CASH', rider_memo: '',
+  // 임시저장 복원 또는 기본값
+  const [form, setForm] = useState(() => {
+    const draft = loadDraft();
+    if (draft && draft.started_at) {
+      const { _savedAt, ...rest } = draft;
+      return { ...defaultForm, ...rest };
+    }
+    return { ...defaultForm };
   });
+
+  // 복원 여부 체크 (마운트 시 1회)
+  const didMount = useRef(false);
+  useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true;
+      const draft = loadDraft();
+      if (draft && draft.started_at) setRestored(true);
+    }
+  }, []);
+
+  // form 변경 시 자동 임시 저장 (출발 이후만)
+  useEffect(() => {
+    if (form.started_at) saveDraft(form);
+  }, [form]);
 
   const up = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -107,10 +160,32 @@ export default function RideNew({ user }) {
     try {
       const body = { ...form, total_fare: form.total_fare ? parseInt(form.total_fare) : null, cash_amount: form.payment_method === 'CASH' && form.total_fare ? parseInt(form.total_fare) : null };
       await createRide(body);
+      clearDraft(); // 저장 성공 시 임시 데이터 삭제
       alert('운행일지가 저장되었습니다.');
       nav('/');
     } catch (err) { alert(err.response?.data?.error || '저장에 실패했습니다.'); }
     finally { setSaving(false); }
+  };
+
+  // 뒤로가기 시 확인
+  const handleBack = () => {
+    if (form.started_at) {
+      if (confirm('작성 중인 데이터가 있습니다.\n임시저장 후 나가시겠습니까?\n\n(임시저장된 데이터는 다시 돌아오면 자동 복원됩니다)')) {
+        saveDraft(form);
+        nav('/');
+      }
+    } else {
+      nav('/');
+    }
+  };
+
+  // 임시저장 삭제 (새로 작성)
+  const handleClearDraft = () => {
+    if (confirm('임시저장된 데이터를 삭제하고 새로 작성하시겠습니까?')) {
+      clearDraft();
+      setForm({ ...defaultForm });
+      setRestored(false);
+    }
   };
 
   const clearUser = () => setForm(f => ({ ...f, customer_id: null, customer_name: '', customer_phone: '', partner_id: null, partner_name: '', user_type: '' }));
@@ -129,7 +204,7 @@ export default function RideNew({ user }) {
       {/* Header */}
       <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(247,248,252,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <div style={{ padding: '12px 20px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div onClick={() => nav('/')} style={{ fontSize: 18, cursor: 'pointer' }}>← <span style={{ fontWeight: 800 }}>운행기록 작성</span></div>
+          <div onClick={handleBack} style={{ fontSize: 18, cursor: 'pointer' }}>← <span style={{ fontWeight: 800 }}>운행기록 작성</span></div>
         </div>
         <div style={{ padding: '6px 20px 12px', display: 'flex', gap: 10 }}>
           <button onClick={() => handleGPS('dep')} disabled={depLoading} style={{ flex: 1, padding: '14px 0', borderRadius: 14, border: 'none', fontSize: 15, fontWeight: 800, cursor: 'pointer', background: form.start_lat ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: form.start_lat ? 'white' : '#1d4ed8' }}>{depLoading ? '위치 확인 중...' : form.start_lat ? '✓ 출발' : '출발'}</button>
@@ -138,6 +213,17 @@ export default function RideNew({ user }) {
       </div>
 
       <div style={{ padding: '14px 20px' }}>
+        {/* 임시저장 복원 안내 */}
+        {restored && (
+          <div style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 14, background: '#fffbeb', border: '1.5px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 13, color: '#92400e' }}>
+              📋 이전 작성 데이터가 복원되었습니다
+              <div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>출발: {form.started_at?.slice(0, 16)}</div>
+            </div>
+            <button onClick={handleClearDraft} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>새로 작성</button>
+          </div>
+        )}
+
         <div style={{ background: 'white', borderRadius: 22, padding: 22, boxShadow: '0 2px 16px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           <Field label="운행기사" value={user?.name || ''} onChange={() => {}} icon="👤" disabled />
 
@@ -233,7 +319,7 @@ export default function RideNew({ user }) {
             </div>
           </div>
 
-          {/* 결제 방법 - 3열 그리드 균등 */}
+          {/* 결제 방법 */}
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>결제 방법</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
@@ -253,7 +339,7 @@ export default function RideNew({ user }) {
         </div>
       </div>
 
-      {/* 저장 버튼 - 부모 420px에 맞춤 */}
+      {/* 저장 버튼 */}
       <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 420, padding: '14px 20px 28px', background: 'linear-gradient(0deg, rgba(247,248,252,1) 50%, transparent)', zIndex: 10, boxSizing: 'border-box' }}>
         <button onClick={handleSave} disabled={saving} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: 16, fontWeight: 800, color: 'white', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
           {saving ? '저장 중...' : '저장하기 ✓'}

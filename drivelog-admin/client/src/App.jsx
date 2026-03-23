@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -15,6 +15,8 @@ import Companies from './pages/Companies';
 import PaymentTypes from './pages/PaymentTypes';
 import Permissions from './pages/Permissions';
 import { logout as apiLogout } from './api/client';
+
+const ADMIN_VERSION = __BUILD_TIME__ || 'dev';
 
 const navGroups = [
   { title: '대시보드', items: [
@@ -49,8 +51,13 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('user')); } catch { return null; }
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [apiVersion, setApiVersion] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    if (user) fetch('/api/health').then(r => r.json()).then(d => setApiVersion(d.version || '?')).catch(() => setApiVersion('?'));
+  }, [user]);
 
   const handleLogout = async () => {
     try { await apiLogout(); } catch {}
@@ -90,6 +97,7 @@ export default function App() {
               <div style={{ fontSize: 11, color: '#64748b', textAlign: 'right' }}>
                 <div style={{ fontWeight: 700, color: '#1e293b' }}>{user.company_name || 'DriveLog'}</div>
                 <div>{user.name}</div>
+                <div style={{ fontSize: 9, color: '#b0b8c4', fontFamily: 'monospace', marginTop: 1 }}>A:{ADMIN_VERSION} API:{apiVersion}</div>
               </div>
             </div>
           </header>
