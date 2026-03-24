@@ -22,11 +22,18 @@ export default function Dashboard() {
   }, [month]);
 
   const s = daily.summary || {};
-  const chartData = (daily.data || []).map(d => ({
+
+  // 일별 매출 차트: 최근 7일만
+  const allChartData = (daily.data || []).map(d => ({
     date: (d.date || '').slice(5),
     매출: Number(d.total_fare || 0),
     콜수: d.partner_calls || 0,
   }));
+  const chartData = allChartData.slice(-7);
+
+  // 제휴업체 TOP 6
+  const topPartners = (partners.data || []).slice(0, 6);
+  const totalCalls = partners.totalCalls || topPartners.reduce((s, p) => s + (p.calls || 0), 0);
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>데이터 로딩 중...</div>;
 
@@ -46,8 +53,12 @@ export default function Dashboard() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '5fr 3fr', gap: 14 }}>
+        {/* 일별 매출 (최근 7일) */}
         <div style={{ background: 'white', borderRadius: 14, padding: 24, border: '1px solid #f1f5f9' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>일별 매출</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>일별 매출</div>
+            <div style={{ fontSize: 11, color: '#94a3b8' }}>최근 7일</div>
+          </div>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={chartData}>
               <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -57,10 +68,13 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {/* 고객 TOP 6 */}
         <div style={{ background: 'white', borderRadius: 14, padding: 24, border: '1px solid #f1f5f9' }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>고객 TOP 6</div>
+          {topCustomers.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>}
           {topCustomers.map((c, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < 5 ? '1px solid #f8fafc' : 'none' }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < topCustomers.length - 1 ? '1px solid #f8fafc' : 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 24, height: 24, borderRadius: 6, background: i < 3 ? '#2563eb' : '#e2e8f0', color: i < 3 ? 'white' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{i + 1}</div>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{c.customer_code || c.name}</span>
@@ -72,23 +86,34 @@ export default function Dashboard() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
+        {/* 제휴업체 콜 TOP 6 */}
         <div style={{ background: 'white', borderRadius: 14, padding: 24, border: '1px solid #f1f5f9' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>제휴업체 콜 TOP</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={(partners.data || []).slice(0, 8)} layout="vertical">
-              <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis dataKey="name" type="category" tick={{ fill: '#1e293b', fontSize: 12 }} axisLine={false} tickLine={false} width={80} />
-              <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} />
-              <Bar dataKey="calls" fill="#d97706" radius={[0, 6, 6, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>제휴업체 콜 TOP 6</div>
+          {topPartners.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>}
+          {topPartners.map((p, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < topPartners.length - 1 ? '1px solid #f8fafc' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 24, height: 24, borderRadius: 6, background: i < 3 ? '#d97706' : '#e2e8f0', color: i < 3 ? 'white' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{i + 1}</div>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#d97706' }}>{p.calls}건</span>
+                {totalCalls > 0 && <span style={{ fontSize: 11, color: '#94a3b8' }}>({((p.calls / totalCalls) * 100).toFixed(0)}%)</span>}
+              </div>
+            </div>
+          ))}
         </div>
+
+        {/* 일별 제휴 콜 추이 (최근 7일) */}
         <div style={{ background: 'white', borderRadius: 14, padding: 24, border: '1px solid #f1f5f9' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>일별 제휴 콜 추이</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>일별 제휴 콜 추이</div>
+            <div style={{ fontSize: 11, color: '#94a3b8' }}>최근 7일</div>
+          </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={chartData}>
               <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} />
               <Line type="monotone" dataKey="콜수" stroke="#d97706" strokeWidth={2.5} dot={{ fill: '#d97706', r: 3 }} />
             </LineChart>

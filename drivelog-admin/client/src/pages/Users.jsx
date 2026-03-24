@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchUsers, createUser, updateUser, fetchCompanies } from '../api/client';
+import { fetchUsers, createUser, updateUser, fetchCompanies, fetchMasterCount } from '../api/client';
 
 function useSortable() {
   const [sortKey, setSortKey] = useState('');
@@ -26,30 +26,37 @@ export default function Users() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ login_id: '', password: '', name: '', phone: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' });
   const [saving, setSaving] = useState(false);
+  const [masterCount, setMasterCount] = useState({ count: 0, max: 3 });
   const { toggle, icon, sort } = useSortable();
 
   const currentUser = (() => { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } })();
   const isMaster = currentUser?.role === 'MASTER';
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
-  const load = () => fetchUsers({ q: search || undefined }).then(r => setUsers(r.data || [])).catch(() => {});
+  const load = () => {
+    fetchUsers({ q: search || undefined }).then(r => setUsers(r.data || [])).catch(() => {});
+    if (isMaster) fetchMasterCount().then(r => setMasterCount(r)).catch(() => {});
+  };
   useEffect(() => { load(); if (isMaster) fetchCompanies({ status: 'ACTIVE' }).then(r => setCompanies(r.data || [])).catch(() => {}); }, [search]);
+
+  const masterFull = masterCount.count >= masterCount.max;
 
   const openNew = () => { setEditing(null); setForm({ login_id: '', password: '', name: '', phone: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' }); setModal(true); };
   const openEdit = (u) => { setEditing(u); setForm({ login_id: u.login_id, name: u.name, phone: u.phone, role: u.role, vehicle_number: u.vehicle_number || '', vehicle_type: u.vehicle_type || '', password: '', company_id: u.company_id || '' }); setModal(true); };
 
   const handleSave = async () => {
     if (!form.name || !form.phone) { alert('이름과 연락처는 필수입니다.'); return; }
-    if (isMaster && !form.company_id) { alert('소속 업체를 선택해주세요.'); return; }
+    if (form.role !== 'MASTER' && isMaster && !form.company_id) { alert('소속 업체를 선택해주세요.'); return; }
     setSaving(true);
     try {
       if (editing) {
         const body = { name: form.name, phone: form.phone, vehicle_number: form.vehicle_number, vehicle_type: form.vehicle_type, role: form.role };
-        if (isMaster) body.company_id = form.company_id;
+        if (isMaster && form.role !== 'MASTER') body.company_id = form.company_id;
         await updateUser(editing.user_id, body);
       } else {
         if (!form.login_id || !form.password) { alert('ID와 비밀번호는 필수입니다.'); setSaving(false); return; }
-        await createUser(form);
+        const body = { ...form };
+        if (form.role === 'MASTER') delete body.company_id;
+        await createUser(body);
       }
       setModal(false); load();
     } catch (err) { alert(err.response?.data?.error || '저장 실패'); }
@@ -64,7 +71,10 @@ export default function Users() {
 
   const roleMap = { MASTER: '마스터', SUPER_ADMIN: '관리자', RIDER: '기사' };
   const statusStyle = (s) => ({ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: s === 'ACTIVE' ? '#f0fdf4' : s === 'SUSPENDED' ? '#fef2f2' : '#f8fafc', color: s === 'ACTIVE' ? '#16a34a' : s === 'SUSPENDED' ? '#dc2626' : '#94a3b8' });
-  const canEdit = (u) => u.role !== 'MASTER';
+
+  // MASTER는 자기 자신만 수정/정지 불가, 다른 MASTER는 가능
+  const canEdit = (u) => isMaster ? u.user_id !== currentUser.user_id : u.role !== 'MASTER';
+  const canToggle = (u) => isMaster ? u.user_id !== currentUser.user_id : u.role !== 'MASTER';
 
   const headers = isMaster
     ? [{ key: 'company_name', label: '업체명' }, { key: 'name', label: '이름' }, { key: null, label: '로그인ID' }, { key: null, label: '역할' }, { key: null, label: '연락처' }, { key: null, label: '차량번호' }, { key: null, label: '상태' }, { key: null, label: '최근로그인' }, { key: null, label: '관리' }]
@@ -72,12 +82,22 @@ export default function Users() {
 
   const sorted = sort(users);
 
+  // 역할 선택 옵션
+  const roleOptions = [
+    { value: 'RIDER', label: '일반 기사', color: '#2563eb', bg: '#eff6ff' },
+    { value: 'SUPER_ADMIN', label: '업체 관리자', color: '#92400e', bg: '#fef3c7' },
+  ];
+  if (isMaster) {
+    roleOptions.push({ value: 'MASTER', label: `시스템 관리자 (${masterCount.count}/${masterCount.max})`, color: '#9d174d', bg: '#fce7f3', disabled: masterFull && form.role !== 'MASTER' });
+  }
+
   return (
     <div className="fade-in">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="이름, ID, 연락처 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, width: 240 }} />
           <span style={{ fontSize: 13, color: '#94a3b8' }}>총 {users.length}명</span>
+          {isMaster && <span style={{ fontSize: 11, color: '#9d174d', background: '#fce7f3', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>MASTER {masterCount.count}/{masterCount.max}</span>}
         </div>
         <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 8, background: '#2563eb', color: 'white', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ 계정 등록</button>
       </div>
@@ -96,7 +116,7 @@ export default function Users() {
           <tbody>
             {sorted.map(u => (
               <tr key={u.user_id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                {isMaster && <td style={{ padding: '11px 12px', whiteSpace: 'nowrap', fontWeight: 600 }}>{u.company_name || '-'}</td>}
+                {isMaster && <td style={{ padding: '11px 12px', whiteSpace: 'nowrap', fontWeight: 600 }}>{u.role === 'MASTER' ? '(시스템)' : u.company_name || '-'}</td>}
                 <td style={{ padding: '11px 12px', fontWeight: 600 }}>{u.name}</td>
                 <td style={{ padding: '11px 12px', color: '#64748b' }}>{u.login_id}</td>
                 <td style={{ padding: '11px 12px' }}>
@@ -109,7 +129,7 @@ export default function Users() {
                 <td style={{ padding: '11px 12px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {canEdit(u) && <button onClick={() => openEdit(u)} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #e2e8f0', background: 'white', fontSize: 11, cursor: 'pointer', color: '#2563eb' }}>수정</button>}
-                    {canEdit(u) && <button onClick={() => toggleStatus(u)} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #e2e8f0', background: 'white', fontSize: 11, cursor: 'pointer', color: u.status === 'ACTIVE' ? '#dc2626' : '#16a34a' }}>{u.status === 'ACTIVE' ? '정지' : '활성'}</button>}
+                    {canToggle(u) && <button onClick={() => toggleStatus(u)} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #e2e8f0', background: 'white', fontSize: 11, cursor: 'pointer', color: u.status === 'ACTIVE' ? '#dc2626' : '#16a34a' }}>{u.status === 'ACTIVE' ? '정지' : '활성'}</button>}
                   </div>
                 </td>
               </tr>
@@ -122,17 +142,34 @@ export default function Users() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setModal(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 28, width: 440, maxHeight: '85vh', overflow: 'auto', boxShadow: '0 16px 48px rgba(0,0,0,0.15)' }}>
             <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>{editing ? '계정 정보 수정' : '신규 계정 등록'}</div>
-            {isMaster && (<div style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>소속 업체 *</label><select value={form.company_id} onChange={e => setForm(p => ({ ...p, company_id: e.target.value }))} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', background: 'white' }}><option value="">업체를 선택하세요</option>{companies.map(c => (<option key={c.company_id} value={c.company_id}>{c.company_name} ({c.company_code})</option>))}</select></div>)}
-            {isSuperAdmin && editing && (<div style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>소속 업체</label><input value={currentUser?.company_name || ''} disabled style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', background: '#f1f5f9', color: '#9ca3af' }} /></div>)}
+
+            {/* 역할 선택 */}
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>권한 *</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {[{ value: 'RIDER', label: '일반 기사', color: '#2563eb', bg: '#eff6ff' }, { value: 'SUPER_ADMIN', label: '업체 관리자', color: '#92400e', bg: '#fef3c7' }].map(r => (
-                  <button key={r.value} type="button" onClick={() => setForm(p => ({ ...p, role: r.value }))} style={{ flex: 1, padding: '12px 0', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', border: form.role === r.value ? `2px solid ${r.color}` : '1.5px solid #e5e7eb', background: form.role === r.value ? r.bg : 'white', color: form.role === r.value ? r.color : '#6b7280' }}>{r.label}</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {roleOptions.map(r => (
+                  <button key={r.value} type="button"
+                    onClick={() => !r.disabled && setForm(p => ({ ...p, role: r.value }))}
+                    style={{ flex: 1, minWidth: r.value === 'MASTER' ? '100%' : 'auto', padding: '12px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: r.disabled ? 'not-allowed' : 'pointer', border: form.role === r.value ? `2px solid ${r.color}` : '1.5px solid #e5e7eb', background: r.disabled ? '#f1f5f9' : form.role === r.value ? r.bg : 'white', color: r.disabled ? '#9ca3af' : form.role === r.value ? r.color : '#6b7280', opacity: r.disabled ? 0.6 : 1 }}>
+                    {r.label}
+                  </button>
                 ))}
               </div>
+              {form.role === 'MASTER' && <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#fce7f3', fontSize: 12, color: '#9d174d' }}>시스템 관리자는 모든 업체를 관리하며 소속 업체가 없습니다. 최대 {masterCount.max}개 계정만 생성 가능합니다.</div>}
               {form.role === 'SUPER_ADMIN' && <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#fef3c7', fontSize: 12, color: '#92400e' }}>업체 관리자는 해당 업체의 기사/고객/운행 기록을 관리할 수 있습니다.</div>}
             </div>
+
+            {/* 소속 업체 (MASTER 역할이 아닐 때만) */}
+            {isMaster && form.role !== 'MASTER' && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>소속 업체 *</label>
+                <select value={form.company_id} onChange={e => setForm(p => ({ ...p, company_id: e.target.value }))} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', background: 'white' }}>
+                  <option value="">업체를 선택하세요</option>
+                  {companies.map(c => (<option key={c.company_id} value={c.company_id}>{c.company_name} ({c.company_code})</option>))}
+                </select>
+              </div>
+            )}
+
             {[{ k: 'name', label: '이름 *', ph: '홍길동' }, { k: 'phone', label: '연락처 *', ph: '010-1234-5678' }, ...(!editing ? [{ k: 'login_id', label: '로그인 ID *', ph: 'rider_hong' }, { k: 'password', label: '비밀번호 *', ph: '비밀번호 (8자 이상)', type: 'password' }] : []), { k: 'vehicle_number', label: '차량번호', ph: '서울 12가 3456' }, { k: 'vehicle_type', label: '차종', ph: '소나타' }].map(f => (
               <div key={f.k} style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.label}</label><input type={f.type || 'text'} value={form[f.k] || ''} onChange={e => setForm(p => ({ ...p, [f.k]: e.target.value }))} placeholder={f.ph} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none' }} /></div>
             ))}

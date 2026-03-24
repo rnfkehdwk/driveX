@@ -37,6 +37,7 @@ export const fetchMileageStats = (params) => api.get('/stats/mileage', { params 
 
 export const fetchUsers = (params) => api.get('/users', { params }).then(r => r.data);
 export const fetchRiders = () => api.get('/users/riders').then(r => r.data);
+export const fetchMasterCount = () => api.get('/users/master-count').then(r => r.data);
 export const createUser = (body) => api.post('/users', body).then(r => r.data);
 export const updateUser = (id, body) => api.put(`/users/${id}`, body).then(r => r.data);
 
@@ -48,6 +49,7 @@ export const createPartner = (body) => api.post('/partners', body).then(r => r.d
 export const updatePartner = (id, body) => api.put(`/partners/${id}`, body).then(r => r.data);
 
 export const fetchSettlements = (params) => api.get('/settlements', { params }).then(r => r.data);
+export const previewSettlements = (params) => api.get('/settlements/preview', { params }).then(r => r.data);
 export const generateSettlements = (body) => api.post('/settlements/generate', body).then(r => r.data);
 export const approveSettlement = (id) => api.put(`/settlements/${id}/approve`).then(r => r.data);
 export const paySettlement = (id) => api.put(`/settlements/${id}/pay`).then(r => r.data);
@@ -64,10 +66,19 @@ export const updateBillingMemo = (id, body) => api.put(`/billing/${id}/memo`, bo
 export const fetchBillingPlans = (params) => api.get('/billing-plans', { params }).then(r => r.data);
 export const createBillingPlan = (body) => api.post('/billing-plans', body).then(r => r.data);
 export const updateBillingPlan = (id, body) => api.put(`/billing-plans/${id}`, body).then(r => r.data);
+export const changePlanPrice = (id, body) => api.put(`/billing-plans/${id}/price`, body).then(r => r.data);
+export const fetchPlanPriceHistory = (id) => api.get(`/billing-plans/${id}/price-history`).then(r => r.data);
+export const fetchSeasonalRates = (id) => api.get(`/billing-plans/${id}/seasonal`).then(r => r.data);
+export const createSeasonalRate = (id, body) => api.post(`/billing-plans/${id}/seasonal`, body).then(r => r.data);
+export const updateSeasonalRate = (id, body) => api.put(`/billing-plans/seasonal/${id}`, body).then(r => r.data);
+export const deleteSeasonalRate = (id) => api.delete(`/billing-plans/seasonal/${id}`).then(r => r.data);
+export const fetchAllPlanHistory = () => api.get('/billing-plans/history/all').then(r => r.data);
 
 export const fetchCompanies = (params) => api.get('/companies', { params }).then(r => r.data);
 export const createCompany = (body) => api.post('/companies', body).then(r => r.data);
 export const updateCompany = (id, body) => api.put(`/companies/${id}`, body).then(r => r.data);
+export const changeCompanyPlan = (id, body) => api.put(`/companies/${id}/plan`, body).then(r => r.data);
+export const fetchCompanyPlanHistory = (id) => api.get(`/companies/${id}/plan-history`).then(r => r.data);
 export const approveCompany = (id) => api.put(`/companies/${id}/approve`).then(r => r.data);
 export const suspendCompany = (id) => api.put(`/companies/${id}/suspend`).then(r => r.data);
 
@@ -76,11 +87,18 @@ export const createPaymentType = (body) => api.post('/payment-types', body).then
 export const updatePaymentType = (id, body) => api.put(`/payment-types/${id}`, body).then(r => r.data);
 export const deletePaymentType = (id) => api.delete(`/payment-types/${id}`).then(r => r.data);
 
-// Permissions (통합권한관리)
 export const fetchPermissions = () => api.get('/permissions').then(r => r.data);
 export const bulkUpdatePermissions = (body) => api.put('/permissions/bulk/update', body).then(r => r.data);
 export const fetchCompanyPermissions = (companyId) => api.get(`/permissions/company/${companyId}`).then(r => r.data);
 export const saveCompanyPermissions = (companyId, body) => api.put(`/permissions/company/${companyId}`, body).then(r => r.data);
 export const resetCompanyPermissions = (companyId) => api.delete(`/permissions/company/${companyId}`).then(r => r.data);
+
+export const fetchSystemSettings = () => api.get('/system-settings').then(r => r.data);
+export const updateSystemSetting = (key, body) => api.put(`/system-settings/${key}`, body).then(r => r.data);
+
+export const fetchPaySettings = (params) => api.get('/pay-settings', { params }).then(r => r.data);
+export const savePaySettings = (body) => api.put('/pay-settings', body).then(r => r.data);
+export const fetchRiderPayRates = (params) => api.get('/pay-settings/riders', { params }).then(r => r.data);
+export const saveRiderPayRate = (riderId, body) => api.put(`/pay-settings/riders/${riderId}`, body).then(r => r.data);
 
 export default api;

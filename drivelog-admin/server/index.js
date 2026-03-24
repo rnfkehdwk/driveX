@@ -19,9 +19,15 @@ const billingPlansRoutes = require('./routes/billingPlans');
 const companiesRoutes = require('./routes/companies');
 const paymentTypesRoutes = require('./routes/paymentTypes');
 const permissionsRoutes = require('./routes/permissions');
+const publicRoutes = require('./routes/publicRoutes');
+const systemSettingsRoutes = require('./routes/systemSettings');
+const paySettingsRoutes = require('./routes/paySettings');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// nginx 리버스 프록시 뒤에서 동작하므로 trust proxy 필수
+app.set('trust proxy', 1);
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: process.env.NODE_ENV === 'production' ? ['https://admin.drivelog.co.kr', 'https://biz.drivelog.co.kr'] : '*', credentials: true }));
@@ -30,7 +36,9 @@ app.use(express.json({ limit: '10mb' }));
 const limiter = rateLimit({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), max: parseInt(process.env.RATE_LIMIT_MAX || '200'), message: { error: '요청이 너무 많습니다.' }, standardHeaders: true, legacyHeaders: false });
 app.use('/api/', limiter);
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: '로그인 시도가 너무 많습니다.' } }));
+app.use('/api/public/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { error: '가입 시도가 너무 많습니다.' } }));
 
+app.use('/api/public', publicRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/rides', ridesRoutes);
 app.use('/api/stats', statsRoutes);
@@ -44,8 +52,10 @@ app.use('/api/billing-plans', billingPlansRoutes);
 app.use('/api/companies', companiesRoutes);
 app.use('/api/payment-types', paymentTypesRoutes);
 app.use('/api/permissions', permissionsRoutes);
+app.use('/api/system-settings', systemSettingsRoutes);
+app.use('/api/pay-settings', paySettingsRoutes);
 
-app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '1.8', timestamp: new Date().toISOString() }); });
+app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '2.0', timestamp: new Date().toISOString() }); });
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
@@ -54,6 +64,6 @@ app.use((err, req, res, next) => { console.error('Unhandled error:', err); res.s
 
 async function start() {
   await testConnection();
-  app.listen(PORT, () => { console.log(`DriveLog Admin Server v1.8 running on http://localhost:${PORT}`); });
+  app.listen(PORT, () => { console.log(`DriveLog Admin Server v2.0 running on http://localhost:${PORT}`); });
 }
 start();

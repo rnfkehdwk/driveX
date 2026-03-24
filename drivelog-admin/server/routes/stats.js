@@ -3,42 +3,32 @@ const router = express.Router();
 const { pool } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 
-// 업체 ID 결정 헬퍼
-function getCompanyFilter(user) {
-  if (user.role === 'MASTER') return { where: '', params: [] };
-  return { where: 'AND r.company_id = ?', params: [user.company_id] };
+function getCompanyId(user, query) {
+  if (user.role === 'MASTER') return query.company_id ? parseInt(query.company_id) : null;
+  return user.company_id;
 }
 
-// GET /api/stats/daily - 일자별 통계 (대시보드 + 마일리지 일자별)
+// GET /api/stats/daily
 router.get('/daily', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, res) => {
   try {
     const { month } = req.query;
-    const cf = getCompanyFilter(req.user);
+    const companyId = getCompanyId(req.user, req.query);
 
-    let dateFilter = '';
-    const params = [...cf.params];
-    if (month) {
-      dateFilter = `AND DATE_FORMAT(r.started_at, '%Y-%m') = ?`;
-      params.push(month);
-    }
+    let where = "WHERE r.status != 'CANCELLED'";
+    const params = [];
+    if (companyId) { where += ' AND r.company_id = ?'; params.push(companyId); }
+    if (month) { where += " AND DATE_FORMAT(r.started_at, '%Y-%m') = ?"; params.push(month); }
 
     const [rows] = await pool.execute(
-      `SELECT 
-        DATE(r.started_at) AS date,
-        COUNT(*) AS ride_count,
+      `SELECT DATE(r.started_at) AS date, COUNT(*) AS ride_count,
         COALESCE(SUM(r.total_fare), 0) AS total_fare,
         COALESCE(SUM(r.cash_amount), 0) AS total_cash,
         COALESCE(SUM(r.mileage_used), 0) AS total_mileage_used,
         COALESCE(SUM(r.mileage_earned), 0) AS total_mileage_earned,
-        COUNT(r.partner_id) AS partner_calls
-       FROM rides r
-       WHERE r.status != 'CANCELLED' ${cf.where} ${dateFilter}
-       GROUP BY DATE(r.started_at)
-       ORDER BY date`,
-      params
+        SUM(CASE WHEN r.partner_id IS NOT NULL THEN 1 ELSE 0 END) AS partner_calls
+       FROM rides r ${where} GROUP BY DATE(r.started_at) ORDER BY date`, params
     );
 
-    // 월 합계
     const summary = rows.reduce((acc, r) => ({
       total_fare: acc.total_fare + Number(r.total_fare),
       ride_count: acc.ride_count + r.ride_count,
@@ -58,24 +48,30 @@ router.get('/daily', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (re
 router.get('/partners', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, res) => {
   try {
     const { month } = req.query;
-    const cf = getCompanyFilter(req.user);
+    const companyId = getCompanyId(req.user, req.query);
 
-    let dateFilter = '';
-    const params = [...cf.params];
+    if (!companyId) return res.json({ data: [], totalCalls: 0 });
+
+    // SQL: LEFT JOIN 조건에 month 파라미터, WHERE 에 companyId 파라미터
+    // 파라미터 순서: [month (있으면)] → [companyId]
+    let rideJoinExtra = "AND r.status != 'CANCELLED'";
+    const params = [];
+
     if (month) {
-      dateFilter = `AND DATE_FORMAT(r.started_at, '%Y-%m') = ?`;
+      rideJoinExtra += " AND DATE_FORMAT(r.started_at, '%Y-%m') = ?";
       params.push(month);
     }
+
+    params.push(companyId); // WHERE p.company_id = ?
 
     const [rows] = await pool.execute(
       `SELECT p.partner_id, p.name, p.phone, COUNT(r.ride_id) AS calls
        FROM partner_companies p
-       LEFT JOIN rides r ON r.partner_id = p.partner_id 
-         AND r.status != 'CANCELLED' ${dateFilter}
+       LEFT JOIN rides r ON r.partner_id = p.partner_id ${rideJoinExtra}
        WHERE p.company_id = ? AND p.status = 'ACTIVE'
        GROUP BY p.partner_id, p.name, p.phone
        ORDER BY calls DESC`,
-      [req.user.role === 'MASTER' ? (req.query.company_id || 0) : req.user.company_id, ...params.slice(cf.params.length)]
+      params
     );
 
     const totalCalls = rows.reduce((sum, r) => sum + r.calls, 0);
@@ -90,13 +86,19 @@ router.get('/partners', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async 
 router.get('/mileage', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, res) => {
   try {
     const { q, month } = req.query;
-    const companyId = req.user.role === 'MASTER' ? (req.query.company_id || 0) : req.user.company_id;
+    const companyId = getCompanyId(req.user, req.query);
 
-    let where = 'WHERE r.company_id = ? AND r.status != ?';
-    const params = [companyId, 'CANCELLED'];
+    if (!companyId) return res.json({ data: [], summary: { total_fare: 0, mileage_earned: 0, mileage_used: 0 } });
 
-    if (month) { where += ` AND DATE_FORMAT(r.started_at, '%Y-%m') = ?`; params.push(month); }
-    if (q) { where += ' AND (c.name LIKE ? OR c.customer_code LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+    // LEFT JOIN 조건 파라미터 → WHERE 파라미터 순서로
+    let rideJoinExtra = "AND r.status != 'CANCELLED'";
+    const params = [];
+
+    if (month) { rideJoinExtra += " AND DATE_FORMAT(r.started_at, '%Y-%m') = ?"; params.push(month); }
+
+    params.push(companyId); // WHERE c.company_id = ?
+
+    if (q) { params.push(`%${q}%`, `%${q}%`); }
 
     const [rows] = await pool.execute(
       `SELECT c.customer_id, c.customer_code, c.name, c.phone, c.mileage_balance,
@@ -106,16 +108,12 @@ router.get('/mileage', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (
               COALESCE(SUM(r.mileage_used), 0) AS mileage_used,
               COUNT(r.ride_id) AS ride_count
        FROM customers c
-       LEFT JOIN rides r ON r.customer_id = c.customer_id AND r.status != 'CANCELLED'
-         ${month ? `AND DATE_FORMAT(r.started_at, '%Y-%m') = ?` : ''}
+       LEFT JOIN rides r ON r.customer_id = c.customer_id ${rideJoinExtra}
        WHERE c.company_id = ? AND c.status = 'ACTIVE'
-         ${q ? 'AND (c.name LIKE ? OR c.customer_code LIKE ?)' : ''}
+       ${q ? 'AND (c.name LIKE ? OR c.customer_code LIKE ?)' : ''}
        GROUP BY c.customer_id
        ORDER BY total_fare DESC`,
-      month && q ? [month, companyId, `%${q}%`, `%${q}%`]
-        : month ? [month, companyId]
-        : q ? [companyId, `%${q}%`, `%${q}%`]
-        : [companyId]
+      params
     );
 
     const summary = rows.reduce((acc, r) => ({
