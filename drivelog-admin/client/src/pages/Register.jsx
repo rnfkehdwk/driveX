@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 export default function Register({ onBack }) {
-  const [form, setForm] = useState({ company_name: '', company_code: '', ceo_name: '', phone: '', email: '', address: '', business_number: '', admin_name: '', admin_login_id: '', admin_password: '', admin_password_confirm: '' });
+  const [form, setForm] = useState({ company_name: '', ceo_name: '', phone: '', email: '', address: '', business_number: '', admin_name: '', admin_login_id: '', admin_password: '', admin_password_confirm: '' });
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
-  const [codeAvail, setCodeAvail] = useState(null);
   const [idAvail, setIdAvail] = useState(null);
   const [trialDays, setTrialDays] = useState(14);
 
@@ -15,17 +14,8 @@ export default function Register({ onBack }) {
     }).catch(() => {});
   }, []);
 
-  // 업체코드 실시간 중복 체크
-  useEffect(() => {
-    if (form.company_code.length >= 4) {
-      const t = setTimeout(() => {
-        axios.get(`/api/public/check-code/${form.company_code.toUpperCase()}`).then(r => setCodeAvail(r.data.available)).catch(() => setCodeAvail(null));
-      }, 500);
-      return () => clearTimeout(t);
-    } else { setCodeAvail(null); }
-  }, [form.company_code]);
+  const set = (k) => (e) => setForm(prev => ({ ...prev, [k]: e.target.value }));
 
-  // 로그인 ID 실시간 중복 체크
   useEffect(() => {
     if (form.admin_login_id.length >= 4) {
       const t = setTimeout(() => {
@@ -36,17 +26,16 @@ export default function Register({ onBack }) {
   }, [form.admin_login_id]);
 
   const handleSubmit = async () => {
-    if (!form.company_name || !form.company_code || !form.ceo_name || !form.phone || !form.admin_name || !form.admin_login_id || !form.admin_password) {
+    if (!form.company_name || !form.ceo_name || !form.phone || !form.admin_name || !form.admin_login_id || !form.admin_password) {
       alert('필수 항목을 모두 입력해주세요.'); return;
     }
     if (form.admin_password !== form.admin_password_confirm) { alert('비밀번호가 일치하지 않습니다.'); return; }
     if (form.admin_password.length < 8) { alert('비밀번호는 8자 이상이어야 합니다.'); return; }
-    if (codeAvail === false) { alert('이미 사용 중인 업체코드입니다.'); return; }
     if (idAvail === false) { alert('이미 사용 중인 로그인 ID입니다.'); return; }
 
     setSaving(true);
     try {
-      const body = { ...form, company_code: form.company_code.toUpperCase() };
+      const body = { ...form };
       delete body.admin_password_confirm;
       const res = await axios.post('/api/public/register', body);
       setResult(res.data);
@@ -54,13 +43,8 @@ export default function Register({ onBack }) {
     finally { setSaving(false); }
   };
 
-  const F = ({ k, label, ph, type, required, half, disabled }) => (
-    <div style={{ gridColumn: half ? 'auto' : 'span 2' }}>
-      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>{label}{required && ' *'}</label>
-      <input type={type || 'text'} value={form[k]} onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))} placeholder={ph} disabled={disabled}
-        style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 14, outline: 'none', background: disabled ? '#f3f4f6' : 'white', boxSizing: 'border-box' }} />
-    </div>
-  );
+  const inputStyle = { width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 14, outline: 'none', background: 'white', boxSizing: 'border-box', fontFamily: 'inherit' };
+  const labelStyle = { fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 };
 
   if (result) {
     return (
@@ -89,42 +73,63 @@ export default function Register({ onBack }) {
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{ fontSize: 28, fontWeight: 900, color: '#111827', letterSpacing: -1 }}>Drive<span style={{ color: '#2563eb' }}>Log</span></div>
           <div style={{ fontSize: 14, color: '#6b7280', marginTop: 6 }}>업체 가입 신청</div>
-          <div style={{ marginTop: 10, padding: '8px 16px', borderRadius: 8, background: '#eff6ff', display: 'inline-block', fontSize: 13, color: '#2563eb', fontWeight: 600 }}>
-            {trialDays}일 무료 체험
-          </div>
+          <div style={{ marginTop: 10, padding: '8px 16px', borderRadius: 8, background: '#eff6ff', display: 'inline-block', fontSize: 13, color: '#2563eb', fontWeight: 600 }}>{trialDays}일 무료 체험</div>
         </div>
 
         {/* 업체 정보 */}
         <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', marginBottom: 12, padding: '8px 0', borderBottom: '2px solid #e5e7eb' }}>업체 정보</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-          <F k="company_name" label="업체명" ph="양양대리운전" required half />
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>업체코드 *</label>
-            <input value={form.company_code} onChange={e => setForm(p => ({ ...p, company_code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))} placeholder="YANGYANG01" maxLength={20}
-              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: `1px solid ${codeAvail === true ? '#16a34a' : codeAvail === false ? '#dc2626' : '#d1d5db'}`, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-            {codeAvail === true && <div style={{ fontSize: 11, color: '#16a34a', marginTop: 2 }}>사용 가능</div>}
-            {codeAvail === false && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>이미 사용 중</div>}
+            <label style={labelStyle}>업체명 *</label>
+            <input value={form.company_name} onChange={set('company_name')} placeholder="양양대리운전" style={inputStyle} />
           </div>
-          <F k="ceo_name" label="대표자명" ph="김대표" required half />
-          <F k="phone" label="연락처" ph="010-1234-5678" required half />
-          <F k="email" label="이메일" ph="yang@example.com" half />
-          <F k="business_number" label="사업자번호" ph="123-45-67890" half />
-          <F k="address" label="주소" ph="강원특별자치도 양양군..." />
+          <div>
+            <label style={labelStyle}>대표자명 *</label>
+            <input value={form.ceo_name} onChange={set('ceo_name')} placeholder="김대표" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>연락처 *</label>
+            <input value={form.phone} onChange={set('phone')} placeholder="010-1234-5678" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>이메일</label>
+            <input value={form.email} onChange={set('email')} placeholder="yang@example.com" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>사업자번호</label>
+            <input value={form.business_number} onChange={set('business_number')} placeholder="123-45-67890" style={inputStyle} />
+          </div>
+          <div style={{ gridColumn: 'span 2' }}>
+            <label style={labelStyle}>주소</label>
+            <input value={form.address} onChange={set('address')} placeholder="강원특별자치도 양양군..." style={inputStyle} />
+          </div>
+          <div style={{ gridColumn: 'span 2', background: '#f8fafc', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#64748b' }}>
+            업체코드는 가입 승인 시 자동으로 생성됩니다.
+          </div>
         </div>
 
         {/* 관리자 계정 */}
         <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', marginBottom: 12, padding: '8px 0', borderBottom: '2px solid #e5e7eb' }}>관리자 계정</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-          <F k="admin_name" label="관리자 이름" ph="김관리" required half />
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>로그인 ID *</label>
-            <input value={form.admin_login_id} onChange={e => setForm(p => ({ ...p, admin_login_id: e.target.value }))} placeholder="sa_yang"
-              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: `1px solid ${idAvail === true ? '#16a34a' : idAvail === false ? '#dc2626' : '#d1d5db'}`, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+            <label style={labelStyle}>관리자 이름 *</label>
+            <input value={form.admin_name} onChange={set('admin_name')} placeholder="김관리" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>로그인 ID *</label>
+            <input value={form.admin_login_id} onChange={set('admin_login_id')} placeholder="sa_yang"
+              style={{ ...inputStyle, borderColor: idAvail === true ? '#16a34a' : idAvail === false ? '#dc2626' : '#d1d5db' }} />
             {idAvail === true && <div style={{ fontSize: 11, color: '#16a34a', marginTop: 2 }}>사용 가능</div>}
             {idAvail === false && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>이미 사용 중</div>}
           </div>
-          <F k="admin_password" label="비밀번호" ph="8자 이상" type="password" required half />
-          <F k="admin_password_confirm" label="비밀번호 확인" ph="비밀번호 재입력" type="password" required half />
+          <div>
+            <label style={labelStyle}>비밀번호 * (8자 이상)</label>
+            <input type="password" value={form.admin_password} onChange={set('admin_password')} placeholder="비밀번호" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>비밀번호 확인 *</label>
+            <input type="password" value={form.admin_password_confirm} onChange={set('admin_password_confirm')} placeholder="비밀번호 재입력" style={inputStyle} />
+          </div>
         </div>
 
         <button onClick={handleSubmit} disabled={saving} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>

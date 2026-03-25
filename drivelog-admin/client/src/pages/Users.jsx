@@ -1,20 +1,12 @@
 import { useState, useEffect } from 'react';
-import { fetchUsers, createUser, updateUser, fetchCompanies, fetchMasterCount } from '../api/client';
+import { fetchUsers, createUser, updateUser, fetchCompanies, fetchMasterCount, fetchRiderLimit } from '../api/client';
 
 function useSortable() {
   const [sortKey, setSortKey] = useState('');
   const [sortDir, setSortDir] = useState('asc');
   const toggle = (key) => { if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('asc'); } };
   const icon = (key) => sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
-  const sort = (arr) => {
-    if (!sortKey) return arr;
-    return [...arr].sort((a, b) => {
-      let va = a[sortKey], vb = b[sortKey];
-      if (va == null) va = ''; if (vb == null) vb = '';
-      if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va;
-      return sortDir === 'asc' ? String(va).localeCompare(String(vb), 'ko') : String(vb).localeCompare(String(va), 'ko');
-    });
-  };
+  const sort = (arr) => { if (!sortKey) return arr; return [...arr].sort((a, b) => { let va = a[sortKey], vb = b[sortKey]; if (va == null) va = ''; if (vb == null) vb = ''; if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va; return sortDir === 'asc' ? String(va).localeCompare(String(vb), 'ko') : String(vb).localeCompare(String(va), 'ko'); }); };
   return { toggle, icon, sort };
 }
 
@@ -27,6 +19,7 @@ export default function Users() {
   const [form, setForm] = useState({ login_id: '', password: '', name: '', phone: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' });
   const [saving, setSaving] = useState(false);
   const [masterCount, setMasterCount] = useState({ count: 0, max: 3 });
+  const [riderLimit, setRiderLimit] = useState({ current: 0, max: 0, free_riders: 0, plan_name: '-' });
   const { toggle, icon, sort } = useSortable();
 
   const currentUser = (() => { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } })();
@@ -35,10 +28,12 @@ export default function Users() {
   const load = () => {
     fetchUsers({ q: search || undefined }).then(r => setUsers(r.data || [])).catch(() => {});
     if (isMaster) fetchMasterCount().then(r => setMasterCount(r)).catch(() => {});
+    if (!isMaster) fetchRiderLimit().then(r => setRiderLimit(r)).catch(() => {});
   };
   useEffect(() => { load(); if (isMaster) fetchCompanies({ status: 'ACTIVE' }).then(r => setCompanies(r.data || [])).catch(() => {}); }, [search]);
 
   const masterFull = masterCount.count >= masterCount.max;
+  const riderFull = riderLimit.max > 0 && riderLimit.current >= riderLimit.max;
 
   const openNew = () => { setEditing(null); setForm({ login_id: '', password: '', name: '', phone: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' }); setModal(true); };
   const openEdit = (u) => { setEditing(u); setForm({ login_id: u.login_id, name: u.name, phone: u.phone, role: u.role, vehicle_number: u.vehicle_number || '', vehicle_type: u.vehicle_type || '', password: '', company_id: u.company_id || '' }); setModal(true); };
@@ -66,13 +61,11 @@ export default function Users() {
   const toggleStatus = async (u) => {
     const next = u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
     if (!confirm(`${u.name}님을 ${next === 'ACTIVE' ? '활성화' : '정지'} 하시겠습니까?`)) return;
-    await updateUser(u.user_id, { status: next }); load();
+    try { await updateUser(u.user_id, { status: next }); load(); } catch (err) { alert(err.response?.data?.error || '처리 실패'); }
   };
 
   const roleMap = { MASTER: '마스터', SUPER_ADMIN: '관리자', RIDER: '기사' };
   const statusStyle = (s) => ({ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: s === 'ACTIVE' ? '#f0fdf4' : s === 'SUSPENDED' ? '#fef2f2' : '#f8fafc', color: s === 'ACTIVE' ? '#16a34a' : s === 'SUSPENDED' ? '#dc2626' : '#94a3b8' });
-
-  // MASTER는 자기 자신만 수정/정지 불가, 다른 MASTER는 가능
   const canEdit = (u) => isMaster ? u.user_id !== currentUser.user_id : u.role !== 'MASTER';
   const canToggle = (u) => isMaster ? u.user_id !== currentUser.user_id : u.role !== 'MASTER';
 
@@ -81,47 +74,56 @@ export default function Users() {
     : [{ key: 'name', label: '이름' }, { key: null, label: '로그인ID' }, { key: null, label: '역할' }, { key: null, label: '연락처' }, { key: null, label: '차량번호' }, { key: null, label: '상태' }, { key: null, label: '최근로그인' }, { key: null, label: '관리' }];
 
   const sorted = sort(users);
-
-  // 역할 선택 옵션
   const roleOptions = [
     { value: 'RIDER', label: '일반 기사', color: '#2563eb', bg: '#eff6ff' },
     { value: 'SUPER_ADMIN', label: '업체 관리자', color: '#92400e', bg: '#fef3c7' },
   ];
-  if (isMaster) {
-    roleOptions.push({ value: 'MASTER', label: `시스템 관리자 (${masterCount.count}/${masterCount.max})`, color: '#9d174d', bg: '#fce7f3', disabled: masterFull && form.role !== 'MASTER' });
-  }
+  if (isMaster) roleOptions.push({ value: 'MASTER', label: `시스템 관리자 (${masterCount.count}/${masterCount.max})`, color: '#9d174d', bg: '#fce7f3', disabled: masterFull && form.role !== 'MASTER' });
 
   return (
     <div className="fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="이름, ID, 연락처 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, width: 240 }} />
           <span style={{ fontSize: 13, color: '#94a3b8' }}>총 {users.length}명</span>
           {isMaster && <span style={{ fontSize: 11, color: '#9d174d', background: '#fce7f3', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>MASTER {masterCount.count}/{masterCount.max}</span>}
+          {/* SUPER_ADMIN: 기사수 제한 배지 */}
+          {!isMaster && riderLimit.max > 0 && (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: riderFull ? '#fef2f2' : '#eff6ff', color: riderFull ? '#dc2626' : '#2563eb', border: `1px solid ${riderFull ? '#fecaca' : '#bfdbfe'}` }}>
+              👥 {riderLimit.current}/{riderLimit.max}명 ({riderLimit.plan_name})
+            </span>
+          )}
+          {!isMaster && riderLimit.max === 0 && riderLimit.plan_name !== '-' && (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+              👥 {riderLimit.current}명 (무제한)
+            </span>
+          )}
         </div>
-        <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 8, background: '#2563eb', color: 'white', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ 계정 등록</button>
+        <button onClick={openNew} disabled={!isMaster && riderFull} style={{ padding: '8px 18px', borderRadius: 8, background: (!isMaster && riderFull) ? '#94a3b8' : '#2563eb', color: 'white', border: 'none', fontSize: 13, fontWeight: 700, cursor: (!isMaster && riderFull) ? 'not-allowed' : 'pointer' }}>
+          {(!isMaster && riderFull) ? '⚠️ 계정 한도 초과' : '+ 계정 등록'}
+        </button>
       </div>
+
+      {/* 기사수 제한 초과 배너 */}
+      {!isMaster && riderFull && (
+        <div style={{ background: '#fef2f2', borderRadius: 10, padding: '12px 16px', marginBottom: 14, border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>⚠️ 요금제 계정 한도에 도달했습니다</div>
+            <div style={{ fontSize: 12, color: '#991b1b', marginTop: 2 }}>현재 {riderLimit.current}명 / 최대 {riderLimit.max}명 ({riderLimit.plan_name}). 추가 등록하려면 요금제를 업그레이드하거나 비활성 계정을 정리하세요.</div>
+          </div>
+        </div>
+      )}
 
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #f1f5f9', overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: '#f8fafc' }}>
-              {headers.map((h, i) => (
-                <th key={i} onClick={() => h.key && toggle(h.key)} style={{ padding: '11px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: 12, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', cursor: h.key ? 'pointer' : 'default', userSelect: 'none' }}>
-                  {h.label}{h.key ? icon(h.key) : ''}
-                </th>
-              ))}
-            </tr>
-          </thead>
+          <thead><tr style={{ background: '#f8fafc' }}>{headers.map((h, i) => (<th key={i} onClick={() => h.key && toggle(h.key)} style={{ padding: '11px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: 12, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', cursor: h.key ? 'pointer' : 'default', userSelect: 'none' }}>{h.label}{h.key ? icon(h.key) : ''}</th>))}</tr></thead>
           <tbody>
             {sorted.map(u => (
               <tr key={u.user_id} style={{ borderBottom: '1px solid #f8fafc' }}>
                 {isMaster && <td style={{ padding: '11px 12px', whiteSpace: 'nowrap', fontWeight: 600 }}>{u.role === 'MASTER' ? '(시스템)' : u.company_name || '-'}</td>}
                 <td style={{ padding: '11px 12px', fontWeight: 600 }}>{u.name}</td>
                 <td style={{ padding: '11px 12px', color: '#64748b' }}>{u.login_id}</td>
-                <td style={{ padding: '11px 12px' }}>
-                  <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: u.role === 'SUPER_ADMIN' ? '#fef3c7' : u.role === 'MASTER' ? '#fce7f3' : '#eff6ff', color: u.role === 'SUPER_ADMIN' ? '#92400e' : u.role === 'MASTER' ? '#9d174d' : '#2563eb' }}>{roleMap[u.role] || u.role}</span>
-                </td>
+                <td style={{ padding: '11px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: u.role === 'SUPER_ADMIN' ? '#fef3c7' : u.role === 'MASTER' ? '#fce7f3' : '#eff6ff', color: u.role === 'SUPER_ADMIN' ? '#92400e' : u.role === 'MASTER' ? '#9d174d' : '#2563eb' }}>{roleMap[u.role] || u.role}</span></td>
                 <td style={{ padding: '11px 12px' }}>{u.phone}</td>
                 <td style={{ padding: '11px 12px', color: '#64748b' }}>{u.vehicle_number || '-'}</td>
                 <td style={{ padding: '11px 12px' }}><span style={statusStyle(u.status)}>{u.status}</span></td>
@@ -140,26 +142,24 @@ export default function Users() {
 
       {modal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setModal(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 28, width: 440, maxHeight: '85vh', overflow: 'auto', boxShadow: '0 16px 48px rgba(0,0,0,0.15)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 28, width: 440, maxHeight: '85vh', overflow: 'auto' }}>
             <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>{editing ? '계정 정보 수정' : '신규 계정 등록'}</div>
 
-            {/* 역할 선택 */}
+            {/* 기사수 제한 경고 (신규 등록 시, SUPER_ADMIN만) */}
+            {!editing && !isMaster && riderLimit.max > 0 && (
+              <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 10, background: riderFull ? '#fef2f2' : '#eff6ff', border: `1px solid ${riderFull ? '#fecaca' : '#bfdbfe'}`, fontSize: 12, color: riderFull ? '#dc2626' : '#1e40af' }}>
+                👥 계정 {riderLimit.current}/{riderLimit.max}명 사용 중 ({riderLimit.plan_name})
+                {riderFull && ' — 한도 초과로 등록이 불가합니다.'}
+              </div>
+            )}
+
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>권한 *</label>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {roleOptions.map(r => (
-                  <button key={r.value} type="button"
-                    onClick={() => !r.disabled && setForm(p => ({ ...p, role: r.value }))}
-                    style={{ flex: 1, minWidth: r.value === 'MASTER' ? '100%' : 'auto', padding: '12px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: r.disabled ? 'not-allowed' : 'pointer', border: form.role === r.value ? `2px solid ${r.color}` : '1.5px solid #e5e7eb', background: r.disabled ? '#f1f5f9' : form.role === r.value ? r.bg : 'white', color: r.disabled ? '#9ca3af' : form.role === r.value ? r.color : '#6b7280', opacity: r.disabled ? 0.6 : 1 }}>
-                    {r.label}
-                  </button>
-                ))}
+                {roleOptions.map(r => (<button key={r.value} type="button" onClick={() => !r.disabled && setForm(p => ({ ...p, role: r.value }))} style={{ flex: 1, minWidth: r.value === 'MASTER' ? '100%' : 'auto', padding: '12px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: r.disabled ? 'not-allowed' : 'pointer', border: form.role === r.value ? `2px solid ${r.color}` : '1.5px solid #e5e7eb', background: r.disabled ? '#f1f5f9' : form.role === r.value ? r.bg : 'white', color: r.disabled ? '#9ca3af' : form.role === r.value ? r.color : '#6b7280', opacity: r.disabled ? 0.6 : 1 }}>{r.label}</button>))}
               </div>
-              {form.role === 'MASTER' && <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#fce7f3', fontSize: 12, color: '#9d174d' }}>시스템 관리자는 모든 업체를 관리하며 소속 업체가 없습니다. 최대 {masterCount.max}개 계정만 생성 가능합니다.</div>}
-              {form.role === 'SUPER_ADMIN' && <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#fef3c7', fontSize: 12, color: '#92400e' }}>업체 관리자는 해당 업체의 기사/고객/운행 기록을 관리할 수 있습니다.</div>}
             </div>
 
-            {/* 소속 업체 (MASTER 역할이 아닐 때만) */}
             {isMaster && form.role !== 'MASTER' && (
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>소속 업체 *</label>
@@ -175,7 +175,7 @@ export default function Users() {
             ))}
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button onClick={() => setModal(false)} style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>취소</button>
-              <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: '12px 0', borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? '저장 중...' : editing ? '수정' : '등록'}</button>
+              <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: '12px 0', borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '저장 중...' : editing ? '수정' : '등록'}</button>
             </div>
           </div>
         </div>

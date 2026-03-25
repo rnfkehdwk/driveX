@@ -26,6 +26,7 @@ api.interceptors.response.use((res) => res, async (error) => {
 export const login = (body) => api.post('/auth/login', body).then(r => r.data);
 export const getMe = () => api.get('/auth/me').then(r => r.data);
 export const logout = () => api.post('/auth/logout').then(r => r.data);
+export const changePassword = (body) => api.put('/auth/change-password', body).then(r => r.data);
 
 export const fetchRides = (params) => api.get('/rides', { params }).then(r => r.data);
 export const createRide = (body) => api.post('/rides', body).then(r => r.data);
@@ -37,6 +38,7 @@ export const fetchMileageStats = (params) => api.get('/stats/mileage', { params 
 
 export const fetchUsers = (params) => api.get('/users', { params }).then(r => r.data);
 export const fetchRiders = () => api.get('/users/riders').then(r => r.data);
+export const fetchRiderLimit = (params) => api.get('/users/rider-limit', { params }).then(r => r.data);
 export const fetchMasterCount = () => api.get('/users/master-count').then(r => r.data);
 export const createUser = (body) => api.post('/users', body).then(r => r.data);
 export const updateUser = (id, body) => api.put(`/users/${id}`, body).then(r => r.data);
@@ -95,10 +97,18 @@ export const resetCompanyPermissions = (companyId) => api.delete(`/permissions/c
 
 export const fetchSystemSettings = () => api.get('/system-settings').then(r => r.data);
 export const updateSystemSetting = (key, body) => api.put(`/system-settings/${key}`, body).then(r => r.data);
+export const fetchPaymentInfo = () => api.get('/system-settings/payment-info').then(r => r.data);
 
 export const fetchPaySettings = (params) => api.get('/pay-settings', { params }).then(r => r.data);
 export const savePaySettings = (body) => api.put('/pay-settings', body).then(r => r.data);
 export const fetchRiderPayRates = (params) => api.get('/pay-settings/riders', { params }).then(r => r.data);
 export const saveRiderPayRate = (riderId, body) => api.put(`/pay-settings/riders/${riderId}`, body).then(r => r.data);
+
+export const fetchInquiries = (params) => api.get('/inquiries', { params }).then(r => r.data);
+export const createInquiry = (body) => api.post('/inquiries', body).then(r => r.data);
+export const replyInquiry = (id, body) => api.put(`/inquiries/${id}/reply`, body).then(r => r.data);
+export const updateInquiryStatus = (id, body) => api.put(`/inquiries/${id}/status`, body).then(r => r.data);
+
+export const fetchMonthlyReport = (params) => api.get('/stats/monthly-report', { params }).then(r => r.data);
 
 export default api;

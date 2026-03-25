@@ -23,30 +23,27 @@ api.interceptors.response.use(r => r, async (err) => {
   return Promise.reject(err);
 });
 
-// Auth
 export const login = (b) => api.post('/auth/login', b).then(r => r.data);
 export const getMe = () => api.get('/auth/me').then(r => r.data);
 export const apiLogout = () => api.post('/auth/logout').then(r => r.data);
+export const changePassword = (b) => api.put('/auth/change-password', b).then(r => r.data);
 
-// Rides
 export const fetchRides = (p) => api.get('/rides', { params: p }).then(r => r.data);
 export const createRide = (b) => api.post('/rides', b).then(r => r.data);
 
-// Users (riders)
 export const fetchRiders = () => api.get('/users/riders').then(r => r.data);
 export const fetchUsers = (p) => api.get('/users', { params: p }).then(r => r.data);
 export const createUser = (b) => api.post('/users', b).then(r => r.data);
 
-// Customers
 export const fetchCustomers = (p) => api.get('/customers', { params: p }).then(r => r.data);
 export const createCustomer = (b) => api.post('/customers', b).then(r => r.data);
 
-// Partners (제휴업체)
 export const fetchPartners = (p) => api.get('/partners', { params: p }).then(r => r.data);
 export const createPartner = (b) => api.post('/partners', b).then(r => r.data);
 export const updatePartner = (id, b) => api.put(`/partners/${id}`, b).then(r => r.data);
 
-// Payment Types (결제구분)
 export const fetchPaymentTypes = (p) => api.get('/payment-types', { params: p }).then(r => r.data);
+
+export const createInquiry = (b) => api.post('/inquiries', b).then(r => r.data);
 
 export default api;
