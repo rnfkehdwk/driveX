@@ -16,7 +16,6 @@ router.get('/', authenticate, checkLicense, async (req, res) => {
     if (req.user.role === 'RIDER') { where += ' AND r.rider_id = ?'; params.push(req.user.user_id); }
     if (req.user.role === 'MASTER') { where = 'WHERE 1=1'; params.length = 0; }
 
-    // 만료 시 만료일 이전 데이터만 조회
     if (req.licenseExpired && req.licenseExpires) {
       where += ' AND DATE(r.started_at) <= ?';
       params.push(req.licenseExpires);
@@ -64,15 +63,20 @@ router.get('/:id', authenticate, async (req, res) => {
   } catch (err) { console.error('GET /rides/:id error:', err); res.status(500).json({ error: '운행 상세 조회에 실패했습니다.' }); }
 });
 
-// POST: 만료 시 신규 등록 차단
+// POST: 운행 등록 (만료 시 차단)
 router.post('/', authenticate, authorize('RIDER', 'SUPER_ADMIN'), checkLicense, async (req, res) => {
-  // 만료 시 운행 등록 차단
   if (req.licenseExpired) return res.status(403).json({ error: '서비스 이용기간이 만료되어 운행 등록이 불가합니다.' });
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     const { pickup_rider_id, customer_id, partner_id, start_address, start_detail, start_lat, start_lng, end_address, end_detail, end_lat, end_lng, started_at, ended_at, total_fare, cash_amount, mileage_used, payment_method, rider_memo } = req.body;
+
+    // 필수 필드 검증
+    if (!started_at) {
+      conn.release();
+      return res.status(400).json({ error: '출발 시간은 필수입니다.' });
+    }
 
     let mileage_earned = 0;
     if (total_fare) {
@@ -83,12 +87,12 @@ router.post('/', authenticate, authorize('RIDER', 'SUPER_ADMIN'), checkLicense, 
     const [result] = await conn.execute(
       `INSERT INTO rides (company_id, rider_id, pickup_rider_id, customer_id, partner_id, status, start_address, start_detail, start_lat, start_lng, end_address, end_detail, end_lat, end_lng, started_at, ended_at, total_fare, cash_amount, mileage_used, mileage_earned, final_amount, payment_method, rider_memo)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [req.user.company_id, req.user.user_id, pickup_rider_id || null, customer_id || null, partner_id || null, ended_at ? 'COMPLETED' : 'STARTED', start_address, start_detail || null, start_lat || null, start_lng || null, end_address || null, end_detail || null, end_lat || null, end_lng || null, started_at, ended_at || null, total_fare || null, cash_amount || null, mileage_used || 0, mileage_earned, total_fare ? (total_fare - (mileage_used || 0)) : null, payment_method || 'CASH', rider_memo || null]
+      [req.user.company_id, req.user.user_id, pickup_rider_id || null, customer_id || null, partner_id || null, ended_at ? 'COMPLETED' : 'STARTED', start_address || null, start_detail || null, start_lat || null, start_lng || null, end_address || null, end_detail || null, end_lat || null, end_lng || null, started_at, ended_at || null, total_fare || null, cash_amount || null, mileage_used || 0, mileage_earned, total_fare ? (total_fare - (mileage_used || 0)) : null, payment_method || 'CASH', rider_memo || null]
     );
     const rideId = result.insertId;
 
-    if (start_lat && start_lng) await conn.execute(`INSERT INTO manual_gps_points (ride_id, point_type, latitude, longitude, address, input_method, recorded_at) VALUES (?, 'START', ?, ?, ?, 'CURRENT_LOCATION', ?)`, [rideId, start_lat, start_lng, start_address, started_at]);
-    if (end_lat && end_lng && ended_at) await conn.execute(`INSERT INTO manual_gps_points (ride_id, point_type, latitude, longitude, address, input_method, recorded_at) VALUES (?, 'END', ?, ?, ?, 'CURRENT_LOCATION', ?)`, [rideId, end_lat, end_lng, end_address, ended_at]);
+    if (start_lat && start_lng) await conn.execute(`INSERT INTO manual_gps_points (ride_id, point_type, latitude, longitude, address, input_method, recorded_at) VALUES (?, 'START', ?, ?, ?, 'CURRENT_LOCATION', ?)`, [rideId, start_lat, start_lng, start_address || '', started_at]);
+    if (end_lat && end_lng && ended_at) await conn.execute(`INSERT INTO manual_gps_points (ride_id, point_type, latitude, longitude, address, input_method, recorded_at) VALUES (?, 'END', ?, ?, ?, 'CURRENT_LOCATION', ?)`, [rideId, end_lat, end_lng, end_address || '', ended_at]);
 
     if (mileage_earned > 0 && customer_id) {
       const [custs] = await conn.execute('SELECT mileage_balance FROM customers WHERE customer_id = ?', [customer_id]);

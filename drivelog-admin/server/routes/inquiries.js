@@ -30,10 +30,8 @@ router.get('/', authenticate, async (req, res) => {
     const params = [];
 
     if (req.user.role === 'MASTER') {
-      // MASTER: 전체 문의 조회
       where = 'WHERE 1=1';
     } else {
-      // SUPER_ADMIN/RIDER: 자기 업체 문의만
       where = 'WHERE i.company_id = ?';
       params.push(req.user.company_id);
     }
@@ -43,7 +41,7 @@ router.get('/', authenticate, async (req, res) => {
       `SELECT i.*, c.company_name, c.company_code, u.name AS user_name, u.role AS user_role,
               r.name AS replied_by_name
        FROM inquiries i
-       JOIN companies c ON i.company_id = c.company_id
+       LEFT JOIN companies c ON i.company_id = c.company_id
        JOIN users u ON i.user_id = u.user_id
        LEFT JOIN users r ON i.replied_by = r.user_id
        ${where} ORDER BY i.created_at DESC`, params
@@ -63,33 +61,39 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/inquiries - 문의 등록 (SUPER_ADMIN, RIDER)
+// POST /api/inquiries - 문의 등록 (모든 역할 가능, MASTER 포함)
 router.post('/', authenticate, async (req, res) => {
   try {
     const { inquiry_type, title, content } = req.body;
     if (!title) return res.status(400).json({ error: '제목을 입력해주세요.' });
 
+    // MASTER는 company_id가 null → NULL 허용
+    const companyId = req.user.company_id || null;
+
     const [result] = await pool.execute(
       'INSERT INTO inquiries (company_id, user_id, inquiry_type, title, content) VALUES (?, ?, ?, ?, ?)',
-      [req.user.company_id, req.user.user_id, inquiry_type || 'GENERAL', title, content || null]
+      [companyId, req.user.user_id, inquiry_type || 'GENERAL', title, content || null]
     );
 
-    // 업체 정보 조회
-    const [compInfo] = await pool.execute(
-      'SELECT c.company_name, c.company_code, c.plan_id, p.plan_name, c.license_expires FROM companies c LEFT JOIN billing_plans p ON c.plan_id = p.plan_id WHERE c.company_id = ?',
-      [req.user.company_id]
-    );
-    const comp = compInfo[0] || {};
+    // 업체 정보 조회 (MASTER는 company_id가 없으므로 빈 객체)
+    let comp = {};
+    if (companyId) {
+      const [compInfo] = await pool.execute(
+        'SELECT c.company_name, c.company_code, c.plan_id, p.plan_name, c.license_expires FROM companies c LEFT JOIN billing_plans p ON c.plan_id = p.plan_id WHERE c.company_id = ?',
+        [companyId]
+      );
+      comp = compInfo[0] || {};
+    }
 
     // 텔레그램 알림
     const typeLabel = TYPE_LABEL[inquiry_type] || '일반 문의';
     const msg = `🔔 <b>새 문의 등록</b>\n\n`
       + `📋 유형: <b>${typeLabel}</b>\n`
-      + `🏢 업체: ${comp.company_name} (${comp.company_code})\n`
+      + (companyId ? `🏢 업체: ${comp.company_name} (${comp.company_code})\n` : `🏢 시스템 관리자\n`)
       + `👤 작성자: ${req.user.name}\n`
       + `📌 제목: ${title}\n`
       + (content ? `💬 내용: ${content.slice(0, 200)}\n` : '')
-      + `\n📊 요금제: ${comp.plan_name || '미지정'}`
+      + (comp.plan_name ? `\n📊 요금제: ${comp.plan_name}` : '')
       + (comp.license_expires ? `\n📅 만료일: ${comp.license_expires.toString().slice(0, 10)}` : '')
       + `\n\n🔗 관리자에서 확인하세요`;
 
@@ -107,7 +111,6 @@ router.put('/:id/reply', authenticate, authorize('MASTER'), async (req, res) => 
   try {
     const { reply, status } = req.body;
     if (!reply) return res.status(400).json({ error: '답변 내용을 입력해주세요.' });
-
     await pool.execute(
       'UPDATE inquiries SET reply = ?, replied_by = ?, replied_at = NOW(), status = ? WHERE id = ?',
       [reply, req.user.user_id, status || 'RESOLVED', req.params.id]
