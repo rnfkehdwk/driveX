@@ -46,4 +46,11 @@ export const fetchPaymentTypes = (p) => api.get('/payment-types', { params: p })
 
 export const createInquiry = (b) => api.post('/inquiries', b).then(r => r.data);
 
+// 콜 관리
+export const fetchCalls = (p) => api.get('/calls', { params: p }).then(r => r.data);
+export const fetchCallWaitingCount = () => api.get('/calls/waiting-count').then(r => r.data);
+export const acceptCall = (id) => api.put(`/calls/${id}/accept`).then(r => r.data);
+export const completeCall = (id, b) => api.put(`/calls/${id}/complete`, b).then(r => r.data);
+export const cancelCall = (id, b) => api.put(`/calls/${id}/cancel`, b).then(r => r.data);
+
 export default api;

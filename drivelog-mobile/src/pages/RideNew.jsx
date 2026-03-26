@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createRide, fetchRiders, fetchCustomers, fetchPartners, fetchPaymentTypes } from '../api/client';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { createRide, fetchRiders, fetchCustomers, fetchPartners, fetchPaymentTypes, completeCall } from '../api/client';
 
 const DRAFT_KEY = 'rideDraft';
 
@@ -43,30 +43,9 @@ function Field({ label, value, onChange, placeholder, type = 'text', icon, suffi
   );
 }
 
-// localStorage에서 임시저장 데이터 복원
-function loadDraft() {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) return null;
-    const draft = JSON.parse(raw);
-    // 24시간 이상 지난 임시저장은 삭제
-    if (draft._savedAt && Date.now() - draft._savedAt > 24 * 60 * 60 * 1000) {
-      localStorage.removeItem(DRAFT_KEY);
-      return null;
-    }
-    return draft;
-  } catch { return null; }
-}
-
-function saveDraft(form) {
-  try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...form, _savedAt: Date.now() }));
-  } catch {}
-}
-
-function clearDraft() {
-  localStorage.removeItem(DRAFT_KEY);
-}
+function loadDraft() { try { const raw = localStorage.getItem(DRAFT_KEY); if (!raw) return null; const draft = JSON.parse(raw); if (draft._savedAt && Date.now() - draft._savedAt > 24*60*60*1000) { localStorage.removeItem(DRAFT_KEY); return null; } return draft; } catch { return null; } }
+function saveDraft(form) { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...form, _savedAt: Date.now() })); } catch {} }
+function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
 
 const defaultForm = {
   started_at: '', ended_at: '',
@@ -77,10 +56,14 @@ const defaultForm = {
   partner_id: null, partner_name: '',
   user_type: '',
   total_fare: '', payment_method: 'CASH', rider_memo: '',
+  _call_id: null, // 콜에서 진입한 경우
 };
 
 export default function RideNew({ user }) {
   const nav = useNavigate();
+  const location = useLocation();
+  const fromCall = location.state?.fromCall || null;
+
   const [riders, setRiders] = useState([]);
   const [userModal, setUserModal] = useState(false);
   const [userTab, setUserTab] = useState('customer');
@@ -97,30 +80,36 @@ export default function RideNew({ user }) {
   const [manualForm, setManualForm] = useState({ name: '', phone: '' });
   const [restored, setRestored] = useState(false);
 
-  // 임시저장 복원 또는 기본값
+  // 콜에서 진입 시 콜 데이터로 초기화, 아니면 임시저장 복원
   const [form, setForm] = useState(() => {
-    const draft = loadDraft();
-    if (draft && draft.started_at) {
-      const { _savedAt, ...rest } = draft;
-      return { ...defaultForm, ...rest };
+    if (fromCall) {
+      return {
+        ...defaultForm,
+        start_address: fromCall.start_address || '',
+        start_detail: fromCall.start_detail || '',
+        end_address: fromCall.end_address || '',
+        end_detail: fromCall.end_detail || '',
+        customer_id: fromCall.customer_id || null,
+        customer_name: fromCall.customer_name || '',
+        customer_phone: fromCall.customer_phone || '',
+        partner_id: fromCall.partner_id || null,
+        partner_name: fromCall.partner_name || '',
+        user_type: fromCall.partner_id ? 'partner' : fromCall.customer_id ? 'customer' : '',
+        total_fare: fromCall.estimated_fare ? String(fromCall.estimated_fare) : '',
+        payment_method: fromCall.payment_method || 'CASH',
+        rider_memo: fromCall.memo ? `[콜 #${fromCall.call_id}] ${fromCall.memo}` : `[콜 #${fromCall.call_id}]`,
+        _call_id: fromCall.call_id,
+      };
     }
+    const draft = loadDraft();
+    if (draft && draft.started_at) { const { _savedAt, ...rest } = draft; return { ...defaultForm, ...rest }; }
     return { ...defaultForm };
   });
 
-  // 복원 여부 체크 (마운트 시 1회)
   const didMount = useRef(false);
-  useEffect(() => {
-    if (!didMount.current) {
-      didMount.current = true;
-      const draft = loadDraft();
-      if (draft && draft.started_at) setRestored(true);
-    }
-  }, []);
+  useEffect(() => { if (!didMount.current) { didMount.current = true; if (!fromCall) { const draft = loadDraft(); if (draft && draft.started_at) setRestored(true); } } }, []);
 
-  // form 변경 시 자동 임시 저장 (출발 이후만)
-  useEffect(() => {
-    if (form.started_at) saveDraft(form);
-  }, [form]);
+  useEffect(() => { if (form.started_at && !fromCall) saveDraft(form); }, [form]);
 
   const up = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -130,11 +119,7 @@ export default function RideNew({ user }) {
     fetchPaymentTypes({ active_only: 'true' }).then(r => setPaymentTypes(r.data || [])).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (userModal && userTab === 'customer') {
-      fetchCustomers({ q: userSearch || undefined }).then(r => setCustomerList(r.data || [])).catch(() => {});
-    }
-  }, [userModal, userSearch, userTab]);
+  useEffect(() => { if (userModal && userTab === 'customer') { fetchCustomers({ q: userSearch || undefined }).then(r => setCustomerList(r.data || [])).catch(() => {}); } }, [userModal, userSearch, userTab]);
 
   const filteredPartners = partnerList.filter(p => !userSearch || p.name.includes(userSearch));
 
@@ -159,49 +144,30 @@ export default function RideNew({ user }) {
     setSaving(true);
     try {
       const body = { ...form, total_fare: form.total_fare ? parseInt(form.total_fare) : null, cash_amount: form.payment_method === 'CASH' && form.total_fare ? parseInt(form.total_fare) : null };
-      await createRide(body);
-      clearDraft(); // 저장 성공 시 임시 데이터 삭제
+      delete body._call_id;
+      const result = await createRide(body);
+
+      // 콜에서 진입한 경우 콜 완료 처리
+      if (form._call_id && result.ride_id) {
+        try { await completeCall(form._call_id, { ride_id: result.ride_id }); } catch (e) { console.error('콜 완료 처리 실패:', e); }
+      }
+
+      clearDraft();
       alert('운행일지가 저장되었습니다.');
       nav('/');
     } catch (err) { alert(err.response?.data?.error || '저장에 실패했습니다.'); }
     finally { setSaving(false); }
   };
 
-  // 뒤로가기 시 확인
-  const handleBack = () => {
-    if (form.started_at) {
-      if (confirm('작성 중인 데이터가 있습니다.\n임시저장 후 나가시겠습니까?\n\n(임시저장된 데이터는 다시 돌아오면 자동 복원됩니다)')) {
-        saveDraft(form);
-        nav('/');
-      }
-    } else {
-      nav('/');
-    }
-  };
-
-  // 임시저장 삭제 (새로 작성)
-  const handleClearDraft = () => {
-    if (confirm('임시저장된 데이터를 삭제하고 새로 작성하시겠습니까?')) {
-      clearDraft();
-      setForm({ ...defaultForm });
-      setRestored(false);
-    }
-  };
-
+  const handleBack = () => { if (form.started_at && !fromCall) { if (confirm('임시저장 후 나가시겠습니까?')) { saveDraft(form); nav('/'); } } else { nav(fromCall ? '/calls' : '/'); } };
+  const handleClearDraft = () => { if (confirm('임시저장된 데이터를 삭제하고 새로 작성하시겠습니까?')) { clearDraft(); setForm({ ...defaultForm }); setRestored(false); } };
   const clearUser = () => setForm(f => ({ ...f, customer_id: null, customer_name: '', customer_phone: '', partner_id: null, partner_name: '', user_type: '' }));
   const filteredRiders = riders.filter(r => r.name.includes(pickupSearch));
-
-  const paymentButtons = paymentTypes.length > 0
-    ? paymentTypes.map(pt => ({ value: pt.code, label: pt.label }))
-    : [{ value: 'CASH', label: '현금' }, { value: 'RIDER_ACCOUNT', label: '기사 계좌' }, { value: 'COMPANY_ACCOUNT', label: '회사 계좌' }, { value: 'NARASI', label: '나라시' }, { value: 'UNPAID', label: '미수' }];
-
-  const selectedUserLabel = form.user_type === 'partner'
-    ? `🏢 ${form.partner_name}`
-    : form.customer_name ? `👤 ${form.customer_name}${form.customer_phone ? ` ${form.customer_phone}` : ''}` : null;
+  const paymentButtons = paymentTypes.length > 0 ? paymentTypes.map(pt => ({ value: pt.code, label: pt.label })) : [{ value: 'CASH', label: '현금' }, { value: 'RIDER_ACCOUNT', label: '기사 계좌' }, { value: 'COMPANY_ACCOUNT', label: '회사 계좌' }, { value: 'NARASI', label: '나라시' }, { value: 'UNPAID', label: '미수' }];
+  const selectedUserLabel = form.user_type === 'partner' ? `🏢 ${form.partner_name}` : form.customer_name ? `👤 ${form.customer_name}${form.customer_phone ? ` ${form.customer_phone}` : ''}` : null;
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc', paddingBottom: 100, overflowX: 'hidden' }}>
-      {/* Header */}
       <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(247,248,252,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <div style={{ padding: '12px 20px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div onClick={handleBack} style={{ fontSize: 18, cursor: 'pointer' }}>← <span style={{ fontWeight: 800 }}>운행기록 작성</span></div>
@@ -213,58 +179,35 @@ export default function RideNew({ user }) {
       </div>
 
       <div style={{ padding: '14px 20px' }}>
-        {/* 임시저장 복원 안내 */}
-        {restored && (
-          <div style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 14, background: '#fffbeb', border: '1.5px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: 13, color: '#92400e' }}>
-              📋 이전 작성 데이터가 복원되었습니다
-              <div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>출발: {form.started_at?.slice(0, 16)}</div>
+        {/* 콜 연동 배너 */}
+        {fromCall && (
+          <div style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 14, background: '#eff6ff', border: '1.5px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 20 }}>📞</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>콜 #{fromCall.call_id}에서 진입</div>
+              <div style={{ fontSize: 11, color: '#3b82f6' }}>출발지/도착지/고객/요금이 자동 입력되었습니다</div>
             </div>
+          </div>
+        )}
+
+        {restored && !fromCall && (
+          <div style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 14, background: '#fffbeb', border: '1.5px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 13, color: '#92400e' }}>📋 이전 작성 데이터가 복원되었습니다<div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>출발: {form.started_at?.slice(0, 16)}</div></div>
             <button onClick={handleClearDraft} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>새로 작성</button>
           </div>
         )}
 
         <div style={{ background: 'white', borderRadius: 22, padding: 22, boxShadow: '0 2px 16px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           <Field label="운행기사" value={user?.name || ''} onChange={() => {}} icon="👤" disabled />
-
-          {/* 픽업기사 */}
           <div style={{ marginBottom: 14, position: 'relative' }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>픽업기사</label>
-            {form.pickup_rider_name ? (
-              <div style={{ display: 'flex', alignItems: 'center', background: '#f0fdf4', borderRadius: 12, border: '1.5px solid #86efac', padding: '0 14px' }}>
-                <span style={{ flex: 1, padding: '13px 0', fontSize: 15, fontWeight: 600, color: '#166534' }}>🙋 {form.pickup_rider_name}</span>
-                <span onClick={() => setForm(f => ({ ...f, pickup_rider_id: null, pickup_rider_name: '' }))} style={{ cursor: 'pointer', fontSize: 18, color: '#9ca3af' }}>✕</span>
-              </div>
-            ) : (
-              <div onClick={() => setPickupOpen(true)} style={{ display: 'flex', alignItems: 'center', background: '#f8f9fb', borderRadius: 12, border: '1.5px solid #e2e8f0', padding: '13px 14px', cursor: 'pointer' }}>
-                <span style={{ flex: 1, fontSize: 15, color: '#9ca3af' }}>픽업기사 선택</span><span style={{ color: '#9ca3af' }}>▼</span>
-              </div>
-            )}
-            {pickupOpen && (
-              <div style={{ position: 'absolute', left: 0, right: 0, zIndex: 20, background: 'white', borderRadius: 14, marginTop: 4, boxShadow: '0 8px 32px rgba(0,0,0,0.15)', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                <div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}>
-                  <input autoFocus value={pickupSearch} onChange={e => setPickupSearch(e.target.value)} placeholder="기사명 검색..." style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none' }} />
-                </div>
-                <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-                  {filteredRiders.map(d => (
-                    <div key={d.user_id} onClick={() => { setForm(f => ({ ...f, pickup_rider_id: d.user_id, pickup_rider_name: d.name })); setPickupOpen(false); setPickupSearch(''); }} style={{ padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid #f8f9fb', fontSize: 14 }}>
-                      {d.name} <span style={{ color: '#94a3b8', fontSize: 12 }}>{d.vehicle_number}</span>
-                    </div>
-                  ))}
-                  {filteredRiders.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>검색 결과 없음</div>}
-                </div>
-                <div onClick={() => { setPickupOpen(false); setPickupSearch(''); }} style={{ padding: 10, textAlign: 'center', fontSize: 13, color: '#9ca3af', cursor: 'pointer', borderTop: '1px solid #f1f5f9' }}>닫기</div>
-              </div>
-            )}
+            {form.pickup_rider_name ? (<div style={{ display: 'flex', alignItems: 'center', background: '#f0fdf4', borderRadius: 12, border: '1.5px solid #86efac', padding: '0 14px' }}><span style={{ flex: 1, padding: '13px 0', fontSize: 15, fontWeight: 600, color: '#166534' }}>🙋 {form.pickup_rider_name}</span><span onClick={() => setForm(f => ({ ...f, pickup_rider_id: null, pickup_rider_name: '' }))} style={{ cursor: 'pointer', fontSize: 18, color: '#9ca3af' }}>✕</span></div>)
+            : (<div onClick={() => setPickupOpen(true)} style={{ display: 'flex', alignItems: 'center', background: '#f8f9fb', borderRadius: 12, border: '1.5px solid #e2e8f0', padding: '13px 14px', cursor: 'pointer' }}><span style={{ flex: 1, fontSize: 15, color: '#9ca3af' }}>픽업기사 선택</span><span style={{ color: '#9ca3af' }}>▼</span></div>)}
+            {pickupOpen && (<div style={{ position: 'absolute', left: 0, right: 0, zIndex: 20, background: 'white', borderRadius: 14, marginTop: 4, boxShadow: '0 8px 32px rgba(0,0,0,0.15)', border: '1px solid #e5e7eb', overflow: 'hidden' }}><div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}><input autoFocus value={pickupSearch} onChange={e => setPickupSearch(e.target.value)} placeholder="기사명 검색..." style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none' }} /></div><div style={{ maxHeight: 200, overflowY: 'auto' }}>{filteredRiders.map(d => (<div key={d.user_id} onClick={() => { setForm(f => ({ ...f, pickup_rider_id: d.user_id, pickup_rider_name: d.name })); setPickupOpen(false); setPickupSearch(''); }} style={{ padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid #f8f9fb', fontSize: 14 }}>{d.name} <span style={{ color: '#94a3b8', fontSize: 12 }}>{d.vehicle_number}</span></div>))}{filteredRiders.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>검색 결과 없음</div>}</div><div onClick={() => { setPickupOpen(false); setPickupSearch(''); }} style={{ padding: 10, textAlign: 'center', fontSize: 13, color: '#9ca3af', cursor: 'pointer', borderTop: '1px solid #f1f5f9' }}>닫기</div></div>)}
           </div>
 
           <div style={{ height: 1, background: '#e5e7eb', margin: '20px 0' }} />
-
-          {/* 출발지 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🔵</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>출발지 정보</div>
-          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}><div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🔵</div><div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>출발지 정보</div></div>
           {form.start_lat ? <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 13, color: '#1e40af' }}>📡 GPS 위치가 자동 입력되었습니다 ({form.started_at?.slice(11, 16)})</div>
           : <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#f8f9fb', border: '1px dashed #d1d5db', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>상단의 <strong style={{ color: '#2563eb' }}>출발</strong> 버튼을 눌러주세요</div>}
           <Field label="출발지 주소" value={form.start_address} onChange={up('start_address')} placeholder="GPS 자동 입력" icon="📍" />
@@ -272,12 +215,7 @@ export default function RideNew({ user }) {
           <MiniMap lat={form.start_lat} lng={form.start_lng} label="출발지" />
 
           <div style={{ height: 1, background: '#e5e7eb', margin: '20px 0' }} />
-
-          {/* 도착지 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #dc2626, #b91c1c)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🔴</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>도착지 정보</div>
-          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}><div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #dc2626, #b91c1c)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🔴</div><div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>도착지 정보</div></div>
           {form.end_lat ? <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#fef2f2', border: '1px solid #fecaca', fontSize: 13, color: '#991b1b' }}>📡 GPS 위치가 자동 입력되었습니다 ({form.ended_at?.slice(11, 16)})</div>
           : <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#f8f9fb', border: '1px dashed #d1d5db', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>상단의 <strong style={{ color: '#dc2626' }}>도착</strong> 버튼을 눌러주세요</div>}
           <Field label="도착지 주소" value={form.end_address} onChange={up('end_address')} placeholder="GPS 자동 입력" icon="📍" />
@@ -285,53 +223,27 @@ export default function RideNew({ user }) {
           <MiniMap lat={form.end_lat} lng={form.end_lng} label="도착지" />
 
           <div style={{ height: 1, background: '#e5e7eb', margin: '20px 0' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}><div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>💰</div><div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>요금 정보</div></div>
 
-          {/* 요금 정보 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>💰</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>요금 정보</div>
-          </div>
-
-          {/* 이용객 */}
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>이용객</label>
-            {selectedUserLabel ? (
-              <div style={{ display: 'flex', alignItems: 'center', background: form.user_type === 'partner' ? '#f5f3ff' : '#fffbeb', borderRadius: 12, border: `1.5px solid ${form.user_type === 'partner' ? '#c4b5fd' : '#fde68a'}`, padding: '0 14px' }}>
-                <span style={{ flex: 1, padding: '13px 0', fontSize: 15, fontWeight: 600, color: form.user_type === 'partner' ? '#6d28d9' : '#92400e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedUserLabel}</span>
-                <span onClick={clearUser} style={{ cursor: 'pointer', fontSize: 18, color: '#9ca3af', flexShrink: 0, marginLeft: 8 }}>✕</span>
-              </div>
-            ) : (
-              <div onClick={() => { setUserModal(true); setUserTab('customer'); setUserSearch(''); }} style={{ display: 'flex', alignItems: 'center', background: '#f8f9fb', borderRadius: 12, border: '1.5px solid #e2e8f0', padding: '13px 14px', cursor: 'pointer' }}>
-                <span style={{ flex: 1, fontSize: 15, color: '#9ca3af' }}>이용객을 선택하세요</span>
-                <span style={{ fontSize: 14, color: '#9ca3af', flexShrink: 0 }}>검색</span>
-              </div>
-            )}
+            {selectedUserLabel ? (<div style={{ display: 'flex', alignItems: 'center', background: form.user_type === 'partner' ? '#f5f3ff' : '#fffbeb', borderRadius: 12, border: `1.5px solid ${form.user_type === 'partner' ? '#c4b5fd' : '#fde68a'}`, padding: '0 14px' }}><span style={{ flex: 1, padding: '13px 0', fontSize: 15, fontWeight: 600, color: form.user_type === 'partner' ? '#6d28d9' : '#92400e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedUserLabel}</span><span onClick={clearUser} style={{ cursor: 'pointer', fontSize: 18, color: '#9ca3af', flexShrink: 0, marginLeft: 8 }}>✕</span></div>)
+            : (<div onClick={() => { setUserModal(true); setUserTab('customer'); setUserSearch(''); }} style={{ display: 'flex', alignItems: 'center', background: '#f8f9fb', borderRadius: 12, border: '1.5px solid #e2e8f0', padding: '13px 14px', cursor: 'pointer' }}><span style={{ flex: 1, fontSize: 15, color: '#9ca3af' }}>이용객을 선택하세요</span><span style={{ fontSize: 14, color: '#9ca3af', flexShrink: 0 }}>검색</span></div>)}
           </div>
 
-          {/* 운행 요금 */}
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>운행 요금</label>
             <div style={{ display: 'flex', alignItems: 'center', background: '#f8f9fb', borderRadius: 12, border: '1.5px solid #e2e8f0', padding: '0 14px' }}>
               <span style={{ marginRight: 8, fontSize: 16, opacity: 0.5, flexShrink: 0 }}>💵</span>
-              <input inputMode="numeric" value={formatFare(form.total_fare)} onChange={e => up('total_fare')(parseFare(e.target.value))} placeholder="15,000"
-                style={{ flex: 1, minWidth: 0, padding: '13px 0', border: 'none', background: 'transparent', fontSize: 18, fontWeight: 700, color: '#1f2937', outline: 'none', letterSpacing: 0.5 }} />
+              <input inputMode="numeric" value={formatFare(form.total_fare)} onChange={e => up('total_fare')(parseFare(e.target.value))} placeholder="15,000" style={{ flex: 1, minWidth: 0, padding: '13px 0', border: 'none', background: 'transparent', fontSize: 18, fontWeight: 700, color: '#1f2937', outline: 'none', letterSpacing: 0.5 }} />
               <span style={{ marginLeft: 6, fontSize: 14, color: '#9ca3af', fontWeight: 600, flexShrink: 0 }}>원</span>
             </div>
           </div>
 
-          {/* 결제 방법 */}
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>결제 방법</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-              {paymentButtons.map(p => (
-                <button key={p.value} onClick={() => up('payment_method')(p.value)} style={{
-                  padding: '11px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  border: form.payment_method === p.value ? '2px solid #1a1a2e' : '1.5px solid #e5e7eb',
-                  background: form.payment_method === p.value ? 'linear-gradient(135deg, #1a1a2e, #16213e)' : '#f8f9fb',
-                  color: form.payment_method === p.value ? 'white' : '#6b7280',
-                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                }}>{p.label}</button>
-              ))}
+              {paymentButtons.map(p => (<button key={p.value} onClick={() => up('payment_method')(p.value)} style={{ padding: '11px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: form.payment_method === p.value ? '2px solid #1a1a2e' : '1.5px solid #e5e7eb', background: form.payment_method === p.value ? 'linear-gradient(135deg, #1a1a2e, #16213e)' : '#f8f9fb', color: form.payment_method === p.value ? 'white' : '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</button>))}
             </div>
           </div>
 
@@ -339,96 +251,30 @@ export default function RideNew({ user }) {
         </div>
       </div>
 
-      {/* 저장 버튼 */}
       <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 420, padding: '14px 20px 28px', background: 'linear-gradient(0deg, rgba(247,248,252,1) 50%, transparent)', zIndex: 10, boxSizing: 'border-box' }}>
-        <button onClick={handleSave} disabled={saving} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: 16, fontWeight: 800, color: 'white', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
-          {saving ? '저장 중...' : '저장하기 ✓'}
-        </button>
+        <button onClick={handleSave} disabled={saving} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: 16, fontWeight: 800, color: 'white', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? '저장 중...' : '저장하기 ✓'}</button>
       </div>
 
-      {/* 이용객 선택 모달 */}
       {userModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setUserModal(false)}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, maxHeight: '80vh', background: 'white', borderRadius: '24px 24px 0 0', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '20px 20px 0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-                <div style={{ fontSize: 18, fontWeight: 800 }}>이용객 선택</div>
-                <span onClick={() => { setUserModal(false); setManualCustomer(false); }} style={{ width: 32, height: 32, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>✕</span>
-              </div>
-              {!manualCustomer && (
-                <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderRadius: 12, overflow: 'hidden', border: '1.5px solid #e2e8f0' }}>
-                  <button onClick={() => { setUserTab('customer'); setUserSearch(''); }} style={{ flex: 1, padding: '12px 0', fontSize: 14, fontWeight: 700, border: 'none', cursor: 'pointer', background: userTab === 'customer' ? '#2563eb' : 'white', color: userTab === 'customer' ? 'white' : '#64748b' }}>👤 고객</button>
-                  <button onClick={() => { setUserTab('partner'); setUserSearch(''); }} style={{ flex: 1, padding: '12px 0', fontSize: 14, fontWeight: 700, border: 'none', cursor: 'pointer', background: userTab === 'partner' ? '#7c3aed' : 'white', color: userTab === 'partner' ? 'white' : '#64748b' }}>🏢 제휴업체</button>
-                </div>
-              )}
-              {!manualCustomer && (
-                <input autoFocus value={userSearch} onChange={e => setUserSearch(e.target.value)}
-                  placeholder={userTab === 'customer' ? '이름, 코드, 전화번호 검색...' : '업체명 검색...'}
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', fontSize: 15, outline: 'none', marginBottom: 10 }} />
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}><div style={{ fontSize: 18, fontWeight: 800 }}>이용객 선택</div><span onClick={() => { setUserModal(false); setManualCustomer(false); }} style={{ width: 32, height: 32, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16 }}>✕</span></div>
+              {!manualCustomer && (<div style={{ display: 'flex', gap: 0, marginBottom: 12, borderRadius: 12, overflow: 'hidden', border: '1.5px solid #e2e8f0' }}><button onClick={() => { setUserTab('customer'); setUserSearch(''); }} style={{ flex: 1, padding: '12px 0', fontSize: 14, fontWeight: 700, border: 'none', cursor: 'pointer', background: userTab === 'customer' ? '#2563eb' : 'white', color: userTab === 'customer' ? 'white' : '#64748b' }}>👤 고객</button><button onClick={() => { setUserTab('partner'); setUserSearch(''); }} style={{ flex: 1, padding: '12px 0', fontSize: 14, fontWeight: 700, border: 'none', cursor: 'pointer', background: userTab === 'partner' ? '#7c3aed' : 'white', color: userTab === 'partner' ? 'white' : '#64748b' }}>🏢 제휴업체</button></div>)}
+              {!manualCustomer && (<input autoFocus value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder={userTab === 'customer' ? '이름, 코드, 전화번호 검색...' : '업체명 검색...'} style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', fontSize: 15, outline: 'none', marginBottom: 10 }} />)}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px' }}>
               {manualCustomer ? (
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', marginBottom: 14 }}>이용객 정보 직접 입력</div>
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>이름 *</label>
-                    <input value={manualForm.name} onChange={e => setManualForm(f => ({ ...f, name: e.target.value }))} placeholder="이름" style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 15, outline: 'none' }} />
-                  </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>연락처</label>
-                    <input inputMode="tel" value={manualForm.phone} onChange={e => { const n = e.target.value.replace(/[^0-9]/g,'').slice(0,11); setManualForm(f => ({ ...f, phone: n.length<=3?n:n.length<=7?n.slice(0,3)+'-'+n.slice(3):n.slice(0,3)+'-'+n.slice(3,7)+'-'+n.slice(7) })); }} placeholder="010-1234-5678" style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 15, outline: 'none' }} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                    <button onClick={() => setManualCustomer(false)} style={{ flex: 1, padding: '14px 0', borderRadius: 12, border: '1.5px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>뒤로</button>
-                    <button onClick={() => {
-                      if (!manualForm.name) { alert('이름을 입력하세요.'); return; }
-                      setForm(f => ({ ...f, customer_id: null, customer_name: manualForm.name, customer_phone: manualForm.phone, partner_id: null, partner_name: '', user_type: 'customer' }));
-                      setUserModal(false); setManualCustomer(false); setManualForm({ name: '', phone: '' }); setUserSearch('');
-                    }} style={{ flex: 2, padding: '14px 0', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>적용</button>
-                  </div>
+                  <div style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>이름 *</label><input value={manualForm.name} onChange={e => setManualForm(f => ({ ...f, name: e.target.value }))} placeholder="이름" style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 15, outline: 'none' }} /></div>
+                  <div style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>연락처</label><input inputMode="tel" value={manualForm.phone} onChange={e => { const n = e.target.value.replace(/[^0-9]/g,'').slice(0,11); setManualForm(f => ({ ...f, phone: n.length<=3?n:n.length<=7?n.slice(0,3)+'-'+n.slice(3):n.slice(0,3)+'-'+n.slice(3,7)+'-'+n.slice(7) })); }} placeholder="010-1234-5678" style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 15, outline: 'none' }} /></div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 16 }}><button onClick={() => setManualCustomer(false)} style={{ flex: 1, padding: '14px 0', borderRadius: 12, border: '1.5px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>뒤로</button><button onClick={() => { if (!manualForm.name) { alert('이름을 입력하세요.'); return; } setForm(f => ({ ...f, customer_id: null, customer_name: manualForm.name, customer_phone: manualForm.phone, partner_id: null, partner_name: '', user_type: 'customer' })); setUserModal(false); setManualCustomer(false); setManualForm({ name: '', phone: '' }); setUserSearch(''); }} style={{ flex: 2, padding: '14px 0', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>적용</button></div>
                 </div>
               ) : userTab === 'customer' ? (
-                <>
-                  <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8 }}>검색 결과 {customerList.length}명</div>
-                  {customerList.map(c => (
-                    <div key={c.customer_id} onClick={() => { setForm(f => ({ ...f, customer_id: c.customer_id, customer_name: c.name, customer_phone: c.phone || '', partner_id: null, partner_name: '', user_type: 'customer' })); setUserModal(false); setUserSearch(''); }}
-                      style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 6, border: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: '#92400e', flexShrink: 0 }}>{c.name.charAt(0)}</div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 15, fontWeight: 700 }}>{c.name}</div>
-                        <div style={{ fontSize: 12, color: '#9ca3af' }}>{c.customer_code} {c.phone && `· ${c.phone}`}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {customerList.length === 0 && userSearch && (
-                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                      <div style={{ color: '#9ca3af', marginBottom: 14 }}>"{userSearch}" 검색 결과가 없습니다</div>
-                      <button onClick={() => { setManualCustomer(true); setManualForm({ name: userSearch, phone: '' }); }} style={{ padding: '14px 28px', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>직접 입력하기</button>
-                    </div>
-                  )}
-                  {customerList.length === 0 && !userSearch && (
-                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                      <div style={{ color: '#9ca3af', marginBottom: 14 }}>등록된 고객이 없습니다</div>
-                      <button onClick={() => setManualCustomer(true)} style={{ padding: '14px 28px', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>직접 입력하기</button>
-                    </div>
-                  )}
-                </>
+                <>{customerList.map(c => (<div key={c.customer_id} onClick={() => { setForm(f => ({ ...f, customer_id: c.customer_id, customer_name: c.name, customer_phone: c.phone || '', partner_id: null, partner_name: '', user_type: 'customer' })); setUserModal(false); setUserSearch(''); }} style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 6, border: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}><div style={{ width: 40, height: 40, borderRadius: '50%', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: '#92400e', flexShrink: 0 }}>{c.name.charAt(0)}</div><div><div style={{ fontSize: 15, fontWeight: 700 }}>{c.name}</div><div style={{ fontSize: 12, color: '#9ca3af' }}>{c.customer_code} {c.phone && `· ${c.phone}`}</div></div></div>))}{customerList.length === 0 && <div style={{ textAlign: 'center', padding: '20px 0' }}><div style={{ color: '#9ca3af', marginBottom: 14 }}>{userSearch ? `"${userSearch}" 검색 결과 없음` : '등록된 고객 없음'}</div><button onClick={() => { setManualCustomer(true); setManualForm({ name: userSearch, phone: '' }); }} style={{ padding: '14px 28px', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>직접 입력하기</button></div>}</>
               ) : (
-                <>
-                  <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8 }}>등록 업체 {filteredPartners.length}개</div>
-                  {filteredPartners.map(p => (
-                    <div key={p.partner_id} onClick={() => { setForm(f => ({ ...f, partner_id: p.partner_id, partner_name: p.name, customer_id: null, customer_name: '', customer_phone: '', user_type: 'partner' })); setUserModal(false); setUserSearch(''); }}
-                      style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 6, border: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: '#7c3aed', flexShrink: 0 }}>🏢</div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
-                        <div style={{ fontSize: 12, color: '#9ca3af' }}>{p.partner_code} {p.phone && `· ${p.phone}`}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {filteredPartners.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#9ca3af' }}>제휴업체가 없습니다</div>}
-                </>
+                <>{filteredPartners.map(p => (<div key={p.partner_id} onClick={() => { setForm(f => ({ ...f, partner_id: p.partner_id, partner_name: p.name, customer_id: null, customer_name: '', customer_phone: '', user_type: 'partner' })); setUserModal(false); setUserSearch(''); }} style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 6, border: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}><div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: '#7c3aed', flexShrink: 0 }}>🏢</div><div><div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div><div style={{ fontSize: 12, color: '#9ca3af' }}>{p.partner_code}</div></div></div>))}{filteredPartners.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#9ca3af' }}>제휴업체 없음</div>}</>
               )}
             </div>
           </div>

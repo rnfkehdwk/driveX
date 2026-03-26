@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { fetchCallWaitingCount } from '../api/client';
 
 const MOBILE_VERSION = __BUILD_TIME__ || 'dev';
 
 const ALL_MENUS = [
+  { path: '/calls', label: '콜 현황', icon: '📞', desc: '대기 중 콜 확인 및 수락', color: '#d97706', bg: '#fffbeb', roles: ['MASTER', 'SUPER_ADMIN', 'RIDER'], showBadge: true },
   { path: '/ride/new', label: '운행기록 작성', icon: '🚗', desc: 'GPS 출발/도착 + 요금 입력', color: '#2563eb', bg: '#eff6ff', roles: ['MASTER', 'SUPER_ADMIN', 'RIDER'] },
   { path: '/ride/list', label: '운행기록 조회', icon: '📋', desc: '운행 기록 조회', color: '#16a34a', bg: '#f0fdf4', roles: ['MASTER', 'SUPER_ADMIN', 'RIDER'] },
   { path: '/rider/new', label: '기사 등록', icon: '🧑‍✈️', desc: '신규 기사 등록', color: '#0891b2', bg: '#ecfeff', roles: ['MASTER', 'SUPER_ADMIN'] },
@@ -19,8 +21,8 @@ export default function Home({ user, onMenuClick }) {
   const menus = ALL_MENUS.filter(m => m.roles.includes(role));
   const roleLabel = { MASTER: '시스템 관리자', SUPER_ADMIN: '업체 관리자', RIDER: '운행기사' };
   const [apiVersion, setApiVersion] = useState('');
+  const [waitingCount, setWaitingCount] = useState(0);
 
-  // 만료 여부
   const isExpired = (() => {
     if (!user || !user.license_expires) return false;
     if (user.license_expired) return true;
@@ -31,10 +33,22 @@ export default function Home({ user, onMenuClick }) {
 
   useEffect(() => {
     fetch('/api/health').then(r => r.json()).then(d => setApiVersion(d.version || '?')).catch(() => setApiVersion('?'));
+    // 대기 콜 수 로드
+    if (!isExpired) {
+      fetchCallWaitingCount().then(r => setWaitingCount(r.count || 0)).catch(() => {});
+    }
   }, []);
 
+  // 30초 polling으로 대기 콜 수 갱신
+  useEffect(() => {
+    if (isExpired) return;
+    const iv = setInterval(() => {
+      fetchCallWaitingCount().then(r => setWaitingCount(r.count || 0)).catch(() => {});
+    }, 30000);
+    return () => clearInterval(iv);
+  }, [isExpired]);
+
   const handleMenuClick = (m) => {
-    // 만료 상태에서 설정 외 메뉴 차단
     if (isExpired && !m.allowWhenExpired) {
       if (onMenuClick) onMenuClick(m.path);
       return;
@@ -66,17 +80,23 @@ export default function Home({ user, onMenuClick }) {
             <div key={m.path} onClick={() => handleMenuClick(m)} style={{
               background: disabled ? '#f8f8f8' : 'white', borderRadius: 16, padding: '18px 20px', marginBottom: 12,
               display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer',
-              border: `1px solid ${disabled ? '#e5e5e5' : '#f1f5f9'}`, boxShadow: disabled ? 'none' : '0 1px 3px rgba(0,0,0,0.03)',
+              border: `1px solid ${disabled ? '#e5e5e5' : m.showBadge && waitingCount > 0 ? '#fde68a' : '#f1f5f9'}`,
+              boxShadow: disabled ? 'none' : '0 1px 3px rgba(0,0,0,0.03)',
               opacity: disabled ? 0.6 : 1, transition: 'transform 0.1s',
             }}
             onTouchStart={e => { if (!disabled) e.currentTarget.style.transform = 'scale(0.98)'; }}
             onTouchEnd={e => e.currentTarget.style.transform = 'scale(1)'}>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: disabled ? '#f1f1f1' : m.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: disabled ? '#f1f1f1' : m.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0, position: 'relative' }}>
                 {disabled ? '🔒' : m.icon}
+                {m.showBadge && waitingCount > 0 && !disabled && (
+                  <div style={{ position: 'absolute', top: -4, right: -4, background: '#dc2626', color: 'white', fontSize: 10, fontWeight: 800, minWidth: 20, height: 20, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{waitingCount}</div>
+                )}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: disabled ? '#94a3b8' : '#1e293b' }}>{m.label}</div>
-                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{disabled ? '서비스 만료 — 이용 불가' : m.desc}</div>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                  {disabled ? '서비스 만료 — 이용 불가' : m.showBadge && waitingCount > 0 ? `대기 콜 ${waitingCount}건` : m.desc}
+                </div>
               </div>
               <div style={{ fontSize: 18, color: '#cbd5e1' }}>{disabled ? '🔒' : '›'}</div>
             </div>

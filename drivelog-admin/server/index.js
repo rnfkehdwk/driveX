@@ -23,6 +23,7 @@ const publicRoutes = require('./routes/publicRoutes');
 const systemSettingsRoutes = require('./routes/systemSettings');
 const paySettingsRoutes = require('./routes/paySettings');
 const inquiriesRoutes = require('./routes/inquiries');
+const callsRoutes = require('./routes/calls');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -54,8 +55,9 @@ app.use('/api/permissions', permissionsRoutes);
 app.use('/api/system-settings', systemSettingsRoutes);
 app.use('/api/pay-settings', paySettingsRoutes);
 app.use('/api/inquiries', inquiriesRoutes);
+app.use('/api/calls', callsRoutes);
 
-app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '2.1', timestamp: new Date().toISOString() }); });
+app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '2.2', timestamp: new Date().toISOString() }); });
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
@@ -64,6 +66,6 @@ app.use((err, req, res, next) => { console.error('Unhandled error:', err); res.s
 
 async function start() {
   await testConnection();
-  app.listen(PORT, () => { console.log(`DriveLog Admin Server v2.1 running on http://localhost:${PORT}`); });
+  app.listen(PORT, () => { console.log(`DriveLog Admin Server v2.2 running on http://localhost:${PORT}`); });
 }
 start();

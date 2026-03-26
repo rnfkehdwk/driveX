@@ -17,6 +17,8 @@ import PaymentTypes from './pages/PaymentTypes';
 import Permissions from './pages/Permissions';
 import SystemSettings from './pages/SystemSettings';
 import Inquiries from './pages/Inquiries';
+import MyInquiries from './pages/MyInquiries';
+import CallManage from './pages/CallManage';
 import Reports from './pages/Reports';
 import { logout as apiLogout, createInquiry, changePassword, getMe } from './api/client';
 
@@ -30,13 +32,13 @@ const masterNavGroups = [
 ];
 const superAdminNavGroups = [
   { title: '대시보드', items: [{ path: '/', label: '대시보드', icon: '📊' }, { path: '/reports', label: '월간리포트', icon: '📈' }]},
-  { title: '운행', items: [{ path: '/rides', label: '운행일지', icon: '🚗' }, { path: '/partners', label: '제휴업체 콜', icon: '📞' }, { path: '/mileage', label: '마일리지', icon: '⭐' }]},
+  { title: '운행', items: [{ path: '/calls', label: '콜 관리', icon: '📞' }, { path: '/rides', label: '운행일지', icon: '🚗' }, { path: '/partners', label: '제휴업체 콜', icon: '🏢' }, { path: '/mileage', label: '마일리지', icon: '⭐' }]},
   { title: '정산', items: [{ path: '/settlements', label: '정산관리', icon: '💰' }, { path: '/fare-policies', label: '요금설정', icon: '💵' }, { path: '/billing', label: '사용료', icon: '🧾' }]},
-  { title: '관리', items: [{ path: '/users', label: '기사관리', icon: '🧑‍✈️' }, { path: '/customers', label: '고객관리', icon: '👤' }, { path: '/partner-manage', label: '제휴업체관리', icon: '🤝' }, { path: '/payment-types', label: '결제구분', icon: '💳' }]},
+  { title: '관리', items: [{ path: '/users', label: '기사관리', icon: '🧑‍✈️' }, { path: '/customers', label: '고객관리', icon: '👤' }, { path: '/partner-manage', label: '제휴업체관리', icon: '🤝' }, { path: '/payment-types', label: '결제구분', icon: '💳' }, { path: '/my-inquiries', label: '문의하기', icon: '📩' }]},
 ];
 
-// 기사수 초과 시 접근 가능한 경로 (기사관리만)
-const RIDER_EXCEEDED_ALLOWED = ['/users', '/billing'];
+// 기사수 초과 시 접근 가능한 경로
+const RIDER_EXCEEDED_ALLOWED = ['/users', '/billing', '/my-inquiries'];
 
 function RoleGuard({ user, roles, children }) { if (!user) return <Navigate to="/login" />; if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />; return children; }
 
@@ -60,32 +62,19 @@ function ExpiredOverlay({ user, onContact, onClose }) {
   return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: 'white', borderRadius: 24, padding: '40px 32px', maxWidth: 440, width: '100%', textAlign: 'center' }}><div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div><div style={{ fontSize: 22, fontWeight: 900, color: '#dc2626', marginBottom: 8 }}>서비스 이용기간 만료</div><div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.8, marginBottom: 24 }}><strong>{user.company_name}</strong>의 이용기간이 <strong style={{ color: '#dc2626' }}>{user.license_expires?.slice(0, 10)}</strong>에 만료되었습니다.</div><button onClick={onContact} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 10 }}>갱신 문의하기</button><button onClick={onClose} style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>닫기 (조회만 가능)</button></div></div>);
 }
 
-// 기사수 초과 팝업
 function RiderExceededOverlay({ user, onGoUsers, onClose }) {
   if (!user || user.role === 'MASTER' || !user.rider_exceeded) return null;
   return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: 'white', borderRadius: 24, padding: '40px 32px', maxWidth: 460, width: '100%', textAlign: 'center' }}>
     <div style={{ fontSize: 48, marginBottom: 16 }}>👥</div>
     <div style={{ fontSize: 22, fontWeight: 900, color: '#d97706', marginBottom: 8 }}>활성 계정 수 초과</div>
-    <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.8, marginBottom: 20 }}>
-      <strong>{user.company_name}</strong>의 요금제(<strong>{user.plan_name}</strong>)에서<br />
-      허용하는 최대 계정 수를 초과했습니다.
-    </div>
+    <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.8, marginBottom: 20 }}><strong>{user.company_name}</strong>의 요금제(<strong>{user.plan_name}</strong>)에서<br />허용하는 최대 계정 수를 초과했습니다.</div>
     <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginBottom: 24 }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 32, fontWeight: 900, color: '#dc2626' }}>{user.rider_current}</div>
-        <div style={{ fontSize: 12, color: '#94a3b8' }}>현재 활성</div>
-      </div>
+      <div style={{ textAlign: 'center' }}><div style={{ fontSize: 32, fontWeight: 900, color: '#dc2626' }}>{user.rider_current}</div><div style={{ fontSize: 12, color: '#94a3b8' }}>현재 활성</div></div>
       <div style={{ fontSize: 28, fontWeight: 300, color: '#e2e8f0', alignSelf: 'center' }}>/</div>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 32, fontWeight: 900, color: '#2563eb' }}>{user.rider_max}</div>
-        <div style={{ fontSize: 12, color: '#94a3b8' }}>최대 허용</div>
-      </div>
+      <div style={{ textAlign: 'center' }}><div style={{ fontSize: 32, fontWeight: 900, color: '#2563eb' }}>{user.rider_max}</div><div style={{ fontSize: 12, color: '#94a3b8' }}>최대 허용</div></div>
     </div>
     <div style={{ background: '#fffbeb', borderRadius: 12, padding: 16, marginBottom: 24, textAlign: 'left' }}>
-      <div style={{ fontSize: 13, color: '#92400e', lineHeight: 1.8 }}>
-        📌 기사관리에서 <strong>{user.rider_current - user.rider_max}명</strong>을 비활성 처리하면 정상 이용 가능합니다.<br />
-        📌 또는 사용료 메뉴에서 요금제 업그레이드를 요청하세요.
-      </div>
+      <div style={{ fontSize: 13, color: '#92400e', lineHeight: 1.8 }}>📌 기사관리에서 <strong>{user.rider_current - user.rider_max}명</strong>을 비활성 처리하면 정상 이용 가능합니다.<br />📌 또는 사용료 메뉴에서 요금제 업그레이드를 요청하세요.</div>
     </div>
     <button onClick={onGoUsers} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 10 }}>🧑‍✈️ 기사관리로 이동</button>
     <button onClick={onClose} style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>닫기</button>
@@ -99,12 +88,9 @@ function ExpiringBanner({ user }) {
   return (<div style={{ background: daysLeft <= 3 ? '#fef2f2' : '#fffbeb', border: `1px solid ${daysLeft <= 3 ? '#fecaca' : '#fde68a'}`, borderRadius: 10, padding: '10px 16px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ fontSize: 13, color: daysLeft <= 3 ? '#dc2626' : '#d97706', fontWeight: 600 }}>⏰ 서비스 만료 <strong>{daysLeft}일 전</strong></div></div>);
 }
 
-// 기사수 초과 배너
 function RiderExceededBanner({ user }) {
   if (!user || user.role === 'MASTER' || !user.rider_exceeded) return null;
-  return (<div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 16px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-    <div style={{ fontSize: 13, color: '#d97706', fontWeight: 600 }}>👥 활성 계정 초과 — {user.rider_current}/{user.rider_max}명 (기사관리에서 비활성 처리 필요)</div>
-  </div>);
+  return (<div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 16px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ fontSize: 13, color: '#d97706', fontWeight: 600 }}>👥 활성 계정 초과 — {user.rider_current}/{user.rider_max}명 (기사관리에서 비활성 처리 필요)</div></div>);
 }
 
 export default function App() {
@@ -118,14 +104,12 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 로그인 후 + 페이지 전환 시 기사수 초과 재체크
   const refreshUserState = async () => {
     if (!user) return;
     try {
       const me = await getMe();
       const updated = { ...user, rider_exceeded: me.rider_exceeded, rider_current: me.rider_current, rider_max: me.rider_max, license_expired: me.license_expired };
-      setUser(updated);
-      localStorage.setItem('user', JSON.stringify(updated));
+      setUser(updated); localStorage.setItem('user', JSON.stringify(updated));
       if (me.rider_exceeded && !me.license_expired) setShowRiderExceededPopup(true);
       else setShowRiderExceededPopup(false);
     } catch {}
@@ -139,7 +123,6 @@ export default function App() {
     }
   }, []);
 
-  // 기사관리 페이지에서 나갈 때 기사수 재체크
   useEffect(() => { if (user && !user.license_expired) refreshUserState(); }, [location.pathname]);
 
   const handleLogout = async () => { try { await apiLogout(); } catch {} localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); localStorage.removeItem('user'); setUser(null); setShowExpiredPopup(false); setShowRiderExceededPopup(false); navigate('/login'); };
@@ -154,9 +137,6 @@ export default function App() {
   const accentColor = isMaster ? '#7c3aed' : '#2563eb';
 
   if (location.pathname === '/register') return <Register onBack={() => navigate('/login')} />;
-
-  // 기사수 초과 시 허용되지 않는 라우트로 접근하면 기사관리로 리다이렉트
-  const isAllowedWhenExceeded = RIDER_EXCEEDED_ALLOWED.some(p => location.pathname.startsWith(p));
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -211,6 +191,7 @@ export default function App() {
           <Route path="/register" element={<Register onBack={() => navigate('/login')} />} />
           <Route path="/" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Dashboard />}</RoleGuard>} />
           <Route path="/reports" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Reports />}</RoleGuard>} />
+          <Route path="/calls" element={<RoleGuard user={user} roles={['SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <CallManage />}</RoleGuard>} />
           <Route path="/rides" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Rides />}</RoleGuard>} />
           <Route path="/partners" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Partners />}</RoleGuard>} />
           <Route path="/mileage" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Mileage />}</RoleGuard>} />
@@ -221,6 +202,7 @@ export default function App() {
           <Route path="/settlements" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Settlements />}</RoleGuard>} />
           <Route path="/fare-policies" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <FarePolicies />}</RoleGuard>} />
           <Route path="/billing" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}><Billing user={user} /></RoleGuard>} />
+          <Route path="/my-inquiries" element={<RoleGuard user={user} roles={['SUPER_ADMIN']}><MyInquiries /></RoleGuard>} />
           <Route path="/companies" element={<RoleGuard user={user} roles={['MASTER']}><Companies /></RoleGuard>} />
           <Route path="/permissions" element={<RoleGuard user={user} roles={['MASTER']}><Permissions /></RoleGuard>} />
           <Route path="/system-settings" element={<RoleGuard user={user} roles={['MASTER']}><SystemSettings /></RoleGuard>} />

@@ -111,4 +111,13 @@ export const updateInquiryStatus = (id, body) => api.put(`/inquiries/${id}/statu
 
 export const fetchMonthlyReport = (params) => api.get('/stats/monthly-report', { params }).then(r => r.data);
 
+// 콜 관리
+export const fetchCalls = (params) => api.get('/calls', { params }).then(r => r.data);
+export const fetchCallWaitingCount = () => api.get('/calls/waiting-count').then(r => r.data);
+export const createCall = (body) => api.post('/calls', body).then(r => r.data);
+export const updateCall = (id, body) => api.put(`/calls/${id}`, body).then(r => r.data);
+export const acceptCall = (id) => api.put(`/calls/${id}/accept`).then(r => r.data);
+export const completeCall = (id, body) => api.put(`/calls/${id}/complete`, body).then(r => r.data);
+export const cancelCall = (id, body) => api.put(`/calls/${id}/cancel`, body).then(r => r.data);
+
 export default api;
