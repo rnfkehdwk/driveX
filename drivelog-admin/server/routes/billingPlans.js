@@ -4,11 +4,18 @@ const { pool } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 
 // GET /api/billing-plans
+// MASTER: 전체 요금제 반환 (is_active, is_visible 포함)
+// SUPER_ADMIN/RIDER: is_active=TRUE && is_visible=TRUE 인 것만 반환
 router.get('/', authenticate, async (req, res) => {
   try {
-    const activeOnly = req.query.active_only === 'true';
-    const where = activeOnly ? 'WHERE is_active = TRUE' : '';
-    const [rows] = await pool.execute(`SELECT * FROM billing_plans ${where} ORDER BY plan_id`);
+    const isMaster = req.user.role === 'MASTER';
+    let where = '';
+    if (!isMaster) {
+      where = 'WHERE is_active = TRUE AND is_visible = TRUE';
+    } else if (req.query.active_only === 'true') {
+      where = 'WHERE is_active = TRUE';
+    }
+    const [rows] = await pool.execute(`SELECT * FROM billing_plans ${where} ORDER BY base_fee ASC, plan_id`);
     res.json({ data: rows });
   } catch (err) { res.status(500).json({ error: '요금제 조회 실패' }); }
 });
@@ -16,11 +23,11 @@ router.get('/', authenticate, async (req, res) => {
 // POST /api/billing-plans
 router.post('/', authenticate, authorize('MASTER'), async (req, res) => {
   try {
-    const { plan_name, base_fee, per_rider_fee, free_riders, max_riders, description } = req.body;
+    const { plan_name, base_fee, per_rider_fee, free_riders, max_riders, description, is_visible } = req.body;
     if (!plan_name) return res.status(400).json({ error: '요금제명은 필수입니다.' });
     const [result] = await pool.execute(
-      'INSERT INTO billing_plans (plan_name, base_fee, per_rider_fee, free_riders, max_riders, description) VALUES (?, ?, ?, ?, ?, ?)',
-      [plan_name, base_fee || 0, per_rider_fee || 0, free_riders || 0, max_riders || 0, description || null]
+      'INSERT INTO billing_plans (plan_name, base_fee, per_rider_fee, free_riders, max_riders, description, is_visible) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [plan_name, base_fee || 0, per_rider_fee || 0, free_riders || 0, max_riders || 0, description || null, is_visible !== undefined ? is_visible : 1]
     );
     await pool.execute(
       'INSERT INTO plan_price_history (plan_id, base_fee, per_rider_fee, free_riders, max_riders, effective_from, changed_by) VALUES (?, ?, ?, ?, ?, CURDATE(), ?)',
@@ -33,7 +40,7 @@ router.post('/', authenticate, authorize('MASTER'), async (req, res) => {
 // PUT /api/billing-plans/:id
 router.put('/:id', authenticate, authorize('MASTER'), async (req, res) => {
   try {
-    const allowed = ['plan_name', 'description', 'is_active'];
+    const allowed = ['plan_name', 'description', 'is_active', 'is_visible'];
     const updates = [], values = [];
     for (const key of allowed) {
       if (req.body[key] !== undefined) { updates.push(`${key} = ?`); values.push(req.body[key]); }
@@ -108,12 +115,9 @@ router.delete('/seasonal/:id', authenticate, authorize('MASTER'), async (req, re
   catch (err) { res.status(500).json({ error: '시즌 요금 삭제 실패' }); }
 });
 
-// ─── 통합 이력 API ───
-
-// GET /api/billing-plans/history/all - 모든 요금제의 통합 이력 (요금 변경 + 시즌 특별가)
+// GET /api/billing-plans/history/all
 router.get('/history/all', authenticate, authorize('MASTER'), async (req, res) => {
   try {
-    // 요금 변경 이력
     const [priceHistory] = await pool.execute(
       `SELECT 'PRICE_CHANGE' AS type, h.id, p.plan_name, h.base_fee, h.per_rider_fee, h.free_riders, h.max_riders,
               h.effective_from AS start_date, h.effective_to AS end_date, u.name AS changed_by_name, h.created_at,
@@ -123,8 +127,6 @@ router.get('/history/all', authenticate, authorize('MASTER'), async (req, res) =
        LEFT JOIN users u ON h.changed_by = u.user_id
        ORDER BY h.effective_from DESC`
     );
-
-    // 시즌 특별가 이력
     const [seasonHistory] = await pool.execute(
       `SELECT 'SEASONAL' AS type, s.id, p.plan_name, s.base_fee, s.per_rider_fee, 0 AS free_riders, 0 AS max_riders,
               s.start_date, s.end_date, u.name AS changed_by_name, s.created_at,
@@ -134,14 +136,11 @@ router.get('/history/all', authenticate, authorize('MASTER'), async (req, res) =
        LEFT JOIN users u ON s.created_by = u.user_id
        ORDER BY s.start_date DESC`
     );
-
-    // 합치고 날짜순 정렬
     const all = [...priceHistory, ...seasonHistory].sort((a, b) => {
       const da = a.start_date || a.created_at;
       const db = b.start_date || b.created_at;
       return da > db ? -1 : da < db ? 1 : 0;
     });
-
     res.json({ data: all });
   } catch (err) {
     console.error('GET history/all error:', err);

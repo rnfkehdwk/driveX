@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchBilling, generateBilling, payBilling, fetchBillingPlans, createBillingPlan, changePlanPrice, fetchPlanPriceHistory, fetchSeasonalRates, createSeasonalRate, deleteSeasonalRate, fetchAllPlanHistory, createInquiry, fetchPaymentInfo } from '../api/client';
+import { fetchBilling, generateBilling, payBilling, fetchBillingPlans, createBillingPlan, updateBillingPlan, changePlanPrice, fetchPlanPriceHistory, fetchSeasonalRates, createSeasonalRate, deleteSeasonalRate, fetchAllPlanHistory, createInquiry, fetchPaymentInfo } from '../api/client';
 
 // 결제 안내 + 입금 완료 모달 (계좌 정보를 API에서 불러옴)
 function PaymentModal({ billing, user, onClose, onSubmit }) {
@@ -47,67 +47,36 @@ function PaymentModal({ billing, user, onClose, onSubmit }) {
             <div style={{ background: '#eff6ff', borderRadius: 12, padding: 16, marginBottom: 16, border: '1px solid #bfdbfe' }}>
               <div style={{ fontSize: 13, color: '#1e40af', fontWeight: 600, marginBottom: 8 }}>청구 정보</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 13, color: '#1e293b' }}>
-                <div>청구월: <strong>{billing.billing_period}</strong></div>
-                <div>요금제: <strong>{billing.plan_name || '-'}</strong></div>
-                <div>기사수: <strong>{billing.active_riders || 0}명</strong></div>
-                <div>운행건수: <strong>{billing.total_rides}건</strong></div>
+                <div>청구월: <strong>{billing.billing_period}</strong></div><div>요금제: <strong>{billing.plan_name || '-'}</strong></div>
+                <div>기사수: <strong>{billing.active_riders || 0}명</strong></div><div>운행건수: <strong>{billing.total_rides}건</strong></div>
               </div>
               <div style={{ marginTop: 10, fontSize: 22, fontWeight: 900, color: '#2563eb', textAlign: 'center' }}>{Number(billing.billing_amount).toLocaleString()}원</div>
             </div>
-
-            {payInfoLoading ? (
-              <div style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>계좌 정보 로딩 중...</div>
-            ) : !payInfo.account ? (
-              <div style={{ padding: 20, textAlign: 'center', color: '#dc2626', background: '#fef2f2', borderRadius: 12, marginBottom: 16 }}>결제 계좌 정보가 설정되지 않았습니다. 관리자에게 문의하세요.</div>
+            {payInfoLoading ? (<div style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>계좌 정보 로딩 중...</div>
+            ) : !payInfo.account ? (<div style={{ padding: 20, textAlign: 'center', color: '#dc2626', background: '#fef2f2', borderRadius: 12, marginBottom: 16 }}>결제 계좌 정보가 설정되지 않았습니다. 관리자에게 문의하세요.</div>
             ) : (
               <div style={{ background: '#faf5ff', borderRadius: 12, padding: 16, marginBottom: 16, border: '1px solid #ddd6fe' }}>
                 <div style={{ fontSize: 13, color: '#7c3aed', fontWeight: 600, marginBottom: 10 }}>입금 계좌</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div><div style={{ fontSize: 11, color: '#94a3b8' }}>은행</div><div style={{ fontSize: 15, fontWeight: 700 }}>{payInfo.bank}</div></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div><div style={{ fontSize: 11, color: '#94a3b8' }}>계좌번호</div><div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'monospace', letterSpacing: 1 }}>{payInfo.account}</div></div>
-                    <button onClick={() => handleCopy(payInfo.account)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #ddd6fe', background: copied ? '#f0fdf4' : 'white', color: copied ? '#16a34a' : '#7c3aed', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>{copied ? '✓ 복사됨' : '📋 복사'}</button>
-                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><div style={{ fontSize: 11, color: '#94a3b8' }}>계좌번호</div><div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'monospace', letterSpacing: 1 }}>{payInfo.account}</div></div><button onClick={() => handleCopy(payInfo.account)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #ddd6fe', background: copied ? '#f0fdf4' : 'white', color: copied ? '#16a34a' : '#7c3aed', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>{copied ? '✓ 복사됨' : '📋 복사'}</button></div>
                   <div><div style={{ fontSize: 11, color: '#94a3b8' }}>예금주</div><div style={{ fontSize: 15, fontWeight: 700 }}>{payInfo.holder}</div></div>
                 </div>
               </div>
             )}
-
-            {payInfo.note && (
-              <div style={{ background: '#fffbeb', borderRadius: 10, padding: 12, marginBottom: 20, border: '1px solid #fde68a' }}>
-                <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.8 }}>
-                  📌 {payInfo.note}<br />
-                  📌 입금 후 아래 "입금 완료" 버튼을 눌러주세요.<br />
-                  📌 관리자 확인 후 결제 처리됩니다.
-                </div>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>닫기</button>
-              <button onClick={() => setStep('confirm')} disabled={!payInfo.account} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#16a34a', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: payInfo.account ? 1 : 0.5 }}>입금 완료 → 다음</button>
-            </div>
+            {payInfo.note && (<div style={{ background: '#fffbeb', borderRadius: 10, padding: 12, marginBottom: 20, border: '1px solid #fde68a' }}><div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.8 }}>📌 {payInfo.note}<br />📌 입금 후 아래 "입금 완료" 버튼을 눌러주세요.<br />📌 관리자 확인 후 결제 처리됩니다.</div></div>)}
+            <div style={{ display: 'flex', gap: 10 }}><button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>닫기</button><button onClick={() => setStep('confirm')} disabled={!payInfo.account} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#16a34a', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: payInfo.account ? 1 : 0.5 }}>입금 완료 → 다음</button></div>
           </div>
         )}
 
         {step === 'confirm' && (
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, textAlign: 'center' }}>✅ 입금 완료 신고</div>
-            <div style={{ background: '#f0fdf4', borderRadius: 10, padding: 12, marginBottom: 16, border: '1px solid #bbf7d0', textAlign: 'center' }}>
-              <div style={{ fontSize: 12, color: '#16a34a' }}>청구금액</div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: '#16a34a' }}>{Number(billing.billing_amount).toLocaleString()}원</div>
-              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{billing.billing_period} | {billing.plan_name}</div>
-            </div>
+            <div style={{ background: '#f0fdf4', borderRadius: 10, padding: 12, marginBottom: 16, border: '1px solid #bbf7d0', textAlign: 'center' }}><div style={{ fontSize: 12, color: '#16a34a' }}>청구금액</div><div style={{ fontSize: 20, fontWeight: 900, color: '#16a34a' }}>{Number(billing.billing_amount).toLocaleString()}원</div><div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{billing.billing_period} | {billing.plan_name}</div></div>
             <div style={{ marginBottom: 12 }}><label style={labelStyle}>입금자명 *</label><input value={depositName} onChange={e => setDepositName(e.target.value)} style={inputStyle} placeholder="입금자명 (업체명)" /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-              <div><label style={labelStyle}>입금 금액 *</label><input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} style={inputStyle} /></div>
-              <div><label style={labelStyle}>입금 일자</label><input type="date" value={depositDate} onChange={e => setDepositDate(e.target.value)} style={inputStyle} /></div>
-            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}><div><label style={labelStyle}>입금 금액 *</label><input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} style={inputStyle} /></div><div><label style={labelStyle}>입금 일자</label><input type="date" value={depositDate} onChange={e => setDepositDate(e.target.value)} style={inputStyle} /></div></div>
             <div style={{ marginBottom: 16 }}><label style={labelStyle}>메모 (선택)</label><input value={depositMemo} onChange={e => setDepositMemo(e.target.value)} style={inputStyle} placeholder="참고사항" /></div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setStep('info')} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>← 이전</button>
-              <button onClick={handleSubmit} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '접수 중...' : '입금 완료 접수'}</button>
-            </div>
+            <div style={{ display: 'flex', gap: 10 }}><button onClick={() => setStep('info')} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>← 이전</button><button onClick={handleSubmit} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '접수 중...' : '입금 완료 접수'}</button></div>
           </div>
         )}
       </div>
@@ -150,6 +119,7 @@ export default function Billing({ user }) {
   const openPriceChange = (plan) => { setPriceModal(plan); setPriceForm({ base_fee: String(plan.base_fee), per_rider_fee: String(plan.per_rider_fee), free_riders: String(plan.free_riders), max_riders: String(plan.max_riders), effective_from: '' }); fetchPlanPriceHistory(plan.plan_id).then(r => setPriceHistory(r.data || [])).catch(() => setPriceHistory([])); };
   const handlePriceChange = async () => { if (!priceForm.effective_from) { alert('시행일을 선택해주세요.'); return; } setSaving(true); try { await changePlanPrice(priceModal.plan_id, { base_fee: parseInt(priceForm.base_fee) || 0, per_rider_fee: parseInt(priceForm.per_rider_fee) || 0, free_riders: parseInt(priceForm.free_riders) || 0, max_riders: parseInt(priceForm.max_riders) || 0, effective_from: priceForm.effective_from }); alert('변경 완료'); setPriceModal(null); load(); } catch (err) { alert(err.response?.data?.error || '변경 실패'); } finally { setSaving(false); } };
   const handleNewPlan = async () => { if (!newPlan.plan_name) { alert('요금제명은 필수'); return; } setSaving(true); try { await createBillingPlan({ ...newPlan, base_fee: parseInt(newPlan.base_fee) || 0, per_rider_fee: parseInt(newPlan.per_rider_fee) || 0, free_riders: parseInt(newPlan.free_riders) || 0, max_riders: parseInt(newPlan.max_riders) || 0 }); alert('등록 완료'); setNewPlanModal(false); setNewPlan({ plan_name: '', base_fee: '', per_rider_fee: '', free_riders: '', max_riders: '', description: '' }); load(); } catch (err) { alert(err.response?.data?.error || '등록 실패'); } finally { setSaving(false); } };
+  const handleTogglePlan = async (planId, field, currentValue) => { try { await updateBillingPlan(planId, { [field]: currentValue ? 0 : 1 }); load(); } catch (err) { alert(err.response?.data?.error || '변경 실패'); } };
   const loadSeasons = (planId) => { fetchSeasonalRates(planId).then(r => setSeasons(r.data || [])).catch(() => setSeasons([])); };
   const selectSeasonPlan = (p) => { setSeasonPlan(p); loadSeasons(p.plan_id); };
   const handleAddSeason = async () => { if (!seasonForm.season_name || !seasonForm.start_date || !seasonForm.end_date) { alert('필수 입력'); return; } setSaving(true); try { await createSeasonalRate(seasonPlan.plan_id, { ...seasonForm, base_fee: parseInt(seasonForm.base_fee) || 0, per_rider_fee: parseInt(seasonForm.per_rider_fee) || 0 }); alert('등록 완료'); setSeasonModal(false); setSeasonForm({ season_name: '', start_date: '', end_date: '', base_fee: '', per_rider_fee: '' }); loadSeasons(seasonPlan.plan_id); } catch (err) { alert(err.response?.data?.error || '등록 실패'); } finally { setSaving(false); } };
@@ -189,7 +159,7 @@ export default function Billing({ user }) {
         </div>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>요금제 비교</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
-          {plans.filter(p => p.is_active).map(p => { const isCurr = p.plan_id === user?.plan_id; const isUp = currentPlan && p.base_fee > currentPlan.base_fee; return (
+          {plans.filter(p => p.is_active && p.is_visible !== 0).map(p => { const isCurr = p.plan_id === user?.plan_id; const isUp = currentPlan && p.base_fee > currentPlan.base_fee; return (
             <div key={p.plan_id} style={{ background: 'white', borderRadius: 16, padding: 20, border: isCurr ? '2px solid #2563eb' : '1px solid #e2e8f0', position: 'relative' }}>
               {isCurr && <div style={{ position: 'absolute', top: -10, left: 16, padding: '2px 12px', borderRadius: 4, background: '#2563eb', color: 'white', fontSize: 11, fontWeight: 700 }}>현재 요금제</div>}
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 8, marginTop: isCurr ? 4 : 0 }}>{p.plan_name}</div>
@@ -206,10 +176,39 @@ export default function Billing({ user }) {
         <div style={{ background: 'white', borderRadius: 14, border: '1px solid #f1f5f9', overflow: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}><thead><tr style={{ background: '#f8fafc' }}>{['구분', '요금제', '적용 기간', '기본료', '기사당', '무료', '비고', '변경자', '등록일'].map(h => (<th key={h} style={{ padding: '11px 10px', textAlign: ['기본료', '기사당', '무료'].includes(h) ? 'right' : 'left', fontWeight: 600, color: '#64748b', fontSize: 12, borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap' }}>{h}</th>))}</tr></thead><tbody>{filteredHistory.map((h) => { const isPc = h.type === 'PRICE_CHANGE'; const now = new Date().toISOString().slice(0, 10); const isAct = isPc ? (h.start_date <= now && (!h.end_date || h.end_date >= now)) : (h.is_active && h.start_date <= now && h.end_date >= now); const isFut = h.start_date > now; return (<tr key={`${h.type}-${h.id}`} style={{ borderBottom: '1px solid #f1f5f9', background: isAct ? '#f0fdfa' : isFut ? '#eff6ff' : 'transparent' }}><td style={{ padding: '11px 10px' }}><span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: isPc ? '#faf5ff' : '#fffbeb', color: isPc ? '#7c3aed' : '#d97706' }}>{isPc ? '변경' : '특별가'}</span>{isAct && <span style={{ marginLeft: 4, fontSize: 9, color: '#0891b2', fontWeight: 700 }}>적용중</span>}</td><td style={{ padding: '11px 10px', fontWeight: 600 }}>{h.plan_name}</td><td style={{ padding: '11px 10px', fontFamily: 'monospace', fontSize: 12 }}>{h.start_date || '-'} ~ {h.end_date || '현재'}</td><td style={{ padding: '11px 10px', textAlign: 'right', fontWeight: 600 }}>{Number(h.base_fee).toLocaleString()}원</td><td style={{ padding: '11px 10px', textAlign: 'right' }}>{Number(h.per_rider_fee).toLocaleString()}원</td><td style={{ padding: '11px 10px', textAlign: 'right' }}>{isPc ? `${h.free_riders}명` : '-'}</td><td style={{ padding: '11px 10px', color: '#94a3b8', fontSize: 12 }}>{h.season_name || '-'}</td><td style={{ padding: '11px 10px', fontSize: 12 }}>{h.changed_by_name || '-'}</td><td style={{ padding: '11px 10px', fontSize: 12, color: '#94a3b8' }}>{h.created_at?.slice(0, 10) || '-'}</td></tr>); })}{filteredHistory.length === 0 && <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>이력이 없습니다.</td></tr>}</tbody></table></div>
       </div>)}
 
-      {/* ─── 요금제 관리 (MASTER) ─── */}
+      {/* ─── 요금제 관리 (MASTER) — 활성/비활성 + 노출/비노출 토글 포함 ─── */}
       {tab === 'plans' && isMaster && (<div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}><button onClick={() => setNewPlanModal(true)} style={{ padding: '8px 18px', borderRadius: 8, background: '#7c3aed', color: 'white', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ 요금제 추가</button></div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>{plans.map(p => (<div key={p.plan_id} style={{ background: 'white', borderRadius: 16, padding: 24, border: `2px solid ${p.is_active ? '#e2e8f0' : '#fecaca'}`, opacity: p.is_active ? 1 : 0.6 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}><div style={{ fontSize: 18, fontWeight: 800 }}>{p.plan_name}</div><span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: p.is_active ? '#f0fdf4' : '#fef2f2', color: p.is_active ? '#16a34a' : '#dc2626' }}>{p.is_active ? '활성' : '비활성'}</span></div><div style={{ fontSize: 28, fontWeight: 900, color: '#2563eb', marginBottom: 8 }}>{Number(p.base_fee).toLocaleString()}<span style={{ fontSize: 14, color: '#94a3b8', fontWeight: 500 }}>원/월</span></div><div style={{ fontSize: 13, color: '#64748b', lineHeight: 2 }}>기사당: <strong>{Number(p.per_rider_fee).toLocaleString()}원</strong> / 무료: <strong>{p.free_riders}명</strong> / 최대: <strong>{p.max_riders === 0 ? '무제한' : `${p.max_riders}명`}</strong></div><button onClick={() => openPriceChange(p)} style={{ marginTop: 12, width: '100%', padding: '10px 0', borderRadius: 10, border: '1.5px solid #ddd6fe', background: '#faf5ff', color: '#7c3aed', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>금액 변경</button></div>))}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>
+            <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '2px 8px', borderRadius: 4, marginRight: 6 }}>활성</span> 사용 가능
+            <span style={{ background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: 4, marginLeft: 12, marginRight: 6 }}>노출</span> SA에게 표시
+          </div>
+          <button onClick={() => setNewPlanModal(true)} style={{ padding: '8px 18px', borderRadius: 8, background: '#7c3aed', color: 'white', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ 요금제 추가</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+          {plans.map(p => (
+            <div key={p.plan_id} style={{ background: 'white', borderRadius: 16, padding: 24, border: `2px solid ${!p.is_active ? '#fecaca' : p.is_visible ? '#e2e8f0' : '#fde68a'}`, opacity: p.is_active ? 1 : 0.5 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>{p.plan_name}</div>
+              </div>
+              {/* 활성/비활성 + 노출/비노출 토글 */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button onClick={() => handleTogglePlan(p.plan_id, 'is_active', p.is_active)} style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none', background: p.is_active ? '#f0fdf4' : '#fef2f2', color: p.is_active ? '#16a34a' : '#dc2626', transition: 'all 0.2s' }}>
+                  {p.is_active ? '✅ 활성' : '❌ 비활성'}
+                </button>
+                <button onClick={() => handleTogglePlan(p.plan_id, 'is_visible', p.is_visible)} style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none', background: p.is_visible ? '#eff6ff' : '#f8fafc', color: p.is_visible ? '#2563eb' : '#94a3b8', transition: 'all 0.2s' }}>
+                  {p.is_visible ? '👁 노출' : '🚫 비노출'}
+                </button>
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: '#2563eb', marginBottom: 8 }}>{Number(p.base_fee).toLocaleString()}<span style={{ fontSize: 14, color: '#94a3b8', fontWeight: 500 }}>원/월</span></div>
+              <div style={{ fontSize: 13, color: '#64748b', lineHeight: 2 }}>
+                기사당: <strong>{Number(p.per_rider_fee).toLocaleString()}원</strong> / 무료: <strong>{p.free_riders}명</strong> / 최대: <strong>{p.max_riders === 0 ? '무제한' : `${p.max_riders}명`}</strong>
+              </div>
+              {!p.is_visible && p.is_active && <div style={{ marginTop: 8, fontSize: 11, color: '#d97706', background: '#fffbeb', padding: '4px 8px', borderRadius: 6 }}>⚠️ 활성이지만 SA에게 노출되지 않음 (테스트/프로모션용)</div>}
+              <button onClick={() => openPriceChange(p)} style={{ marginTop: 12, width: '100%', padding: '10px 0', borderRadius: 10, border: '1.5px solid #ddd6fe', background: '#faf5ff', color: '#7c3aed', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>금액 변경</button>
+            </div>
+          ))}
+        </div>
       </div>)}
 
       {/* ─── 시즌별 특별가 (MASTER) ─── */}
@@ -236,7 +235,6 @@ export default function Billing({ user }) {
 
       {/* 요금제 변경 요청 모달 */}
       {changeReqModal && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={() => setChangeReqModal(null)}><div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, maxWidth: 420, width: '100%', textAlign: 'center' }}><div style={{ fontSize: 40, marginBottom: 12 }}>{changeReqModal.type === 'UPGRADE' ? '⬆️' : '⬇️'}</div><div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>요금제 {changeReqModal.type === 'UPGRADE' ? '업그레이드' : '다운그레이드'} 요청</div><div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.8, marginBottom: 20 }}><strong>{currentPlan?.plan_name || '현재'}</strong> → <strong style={{ color: '#2563eb' }}>{changeReqModal.plan.plan_name}</strong><br />월 {Number(changeReqModal.plan.base_fee).toLocaleString()}원</div><div style={{ display: 'flex', gap: 10 }}><button onClick={() => setChangeReqModal(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>취소</button><button onClick={() => handlePlanChangeRequest(changeReqModal.plan, changeReqModal.type)} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: changeReqModal.type === 'UPGRADE' ? '#2563eb' : '#f59e0b', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '요청 중...' : '변경 요청'}</button></div></div></div>)}
-      {/* 금액 변경 모달 */}
       {priceModal && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setPriceModal(null)}><div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 28, width: 500, maxHeight: '85vh', overflow: 'auto' }}><div style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>요금 변경 — {priceModal.plan_name}</div><div style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>시행일 *</label><input type="date" value={priceForm.effective_from} onChange={e => setPriceForm(f => ({ ...f, effective_from: e.target.value }))} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none' }} /></div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>{[{ k: 'base_fee', l: '기본료' }, { k: 'per_rider_fee', l: '기사당' }, { k: 'free_riders', l: '무료기사' }, { k: 'max_riders', l: '최대기사' }].map(f => (<div key={f.k}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.l}</label><input type="number" value={priceForm[f.k]} onChange={e => setPriceForm(p => ({ ...p, [f.k]: e.target.value }))} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none' }} /></div>))}</div><div style={{ display: 'flex', gap: 10, marginTop: 20 }}><button onClick={() => setPriceModal(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>취소</button><button onClick={handlePriceChange} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#7c3aed', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '저장 중...' : '적용'}</button></div></div></div>)}
       {newPlanModal && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setNewPlanModal(false)}><div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 28, width: 440 }}><div style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>새 요금제 등록</div>{[{ k: 'plan_name', l: '요금제명 *', t: 'text' }, { k: 'base_fee', l: '기본료', t: 'number' }, { k: 'per_rider_fee', l: '기사당', t: 'number' }, { k: 'free_riders', l: '무료기사', t: 'number' }, { k: 'max_riders', l: '최대기사', t: 'number' }, { k: 'description', l: '설명', t: 'text' }].map(f => (<div key={f.k} style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.l}</label><input type={f.t} value={newPlan[f.k]} onChange={e => setNewPlan(p => ({ ...p, [f.k]: e.target.value }))} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none' }} /></div>))}<div style={{ display: 'flex', gap: 10, marginTop: 20 }}><button onClick={() => setNewPlanModal(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>취소</button><button onClick={handleNewPlan} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#7c3aed', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '저장 중...' : '등록'}</button></div></div></div>)}
       {seasonModal && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setSeasonModal(false)}><div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 28, width: 440 }}><div style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>시즌 요금 — {seasonPlan?.plan_name}</div><div style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>시즌명 *</label><input value={seasonForm.season_name} onChange={e => setSeasonForm(p => ({ ...p, season_name: e.target.value }))} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none' }} /></div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>{[{ k: 'start_date', l: '시작일 *', t: 'date' }, { k: 'end_date', l: '종료일 *', t: 'date' }, { k: 'base_fee', l: '시즌 기본료', t: 'number' }, { k: 'per_rider_fee', l: '시즌 기사당', t: 'number' }].map(f => (<div key={f.k}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.l}</label><input type={f.t} value={seasonForm[f.k]} onChange={e => setSeasonForm(p => ({ ...p, [f.k]: e.target.value }))} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none' }} /></div>))}</div><div style={{ display: 'flex', gap: 10, marginTop: 16 }}><button onClick={() => setSeasonModal(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>취소</button><button onClick={handleAddSeason} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#d97706', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '저장 중...' : '시즌 등록'}</button></div></div></div>)}
