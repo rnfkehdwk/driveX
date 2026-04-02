@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createRide, fetchRiders, fetchCustomers, fetchPartners, fetchPaymentTypes, completeCall } from '../api/client';
+import AddressSearchModal from '../components/AddressSearchModal';
+import KakaoMiniMap from '../components/KakaoMiniMap';
 
+const KAKAO_REST_KEY = '5bfc2766bfe2836aab70ff613c8c05be';
 const DRAFT_KEY = 'rideDraft';
 
 function formatFare(val) {
@@ -10,23 +13,22 @@ function formatFare(val) {
 }
 function parseFare(formatted) { return formatted.replace(/,/g, ''); }
 
-function MiniMap({ lat, lng, label }) {
-  if (!lat || !lng) return null;
-  return (
-    <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #e2e8f0', marginTop: 8, marginBottom: 14 }}>
-      <iframe title={label} width="100%" height="160" style={{ border: 'none', display: 'block' }}
-        src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng-0.005},${lat-0.003},${lng+0.005},${lat+0.003}&layer=mapnik&marker=${lat},${lng}`} />
-      <div style={{ padding: '6px 10px', background: '#f8f9fb', fontSize: 11, color: '#64748b', textAlign: 'center' }}>{Number(lat).toFixed(5)}, {Number(lng).toFixed(5)}</div>
-    </div>
-  );
-}
-
 async function reverseGeocode(lat, lng) {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ko&addressdetails=1`);
-    const d = await r.json(); const a = d.address || {};
-    return [a.province || a.state, a.city || a.county, a.borough || a.suburb || a.town, a.quarter || a.neighbourhood, a.road, a.house_number].filter(Boolean).join(' ') || d.display_name || '';
-  } catch { return ''; }
+    const res = await fetch(`https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lng}&y=${lat}`, {
+      headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
+    });
+    const data = await res.json();
+    const doc = data.documents?.[0];
+    return doc?.road_address?.address_name || doc?.address?.address_name || '';
+  } catch {
+    // 카카오 실패 시 Nominatim 폴백
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ko&addressdetails=1`);
+      const d = await r.json(); const a = d.address || {};
+      return [a.province || a.state, a.city || a.county, a.borough || a.suburb || a.town, a.road, a.house_number].filter(Boolean).join(' ') || '';
+    } catch { return ''; }
+  }
 }
 
 function Field({ label, value, onChange, placeholder, type = 'text', icon, suffix, disabled, inputMode }) {
@@ -38,6 +40,26 @@ function Field({ label, value, onChange, placeholder, type = 'text', icon, suffi
         <input type={type} inputMode={inputMode} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
           style={{ flex: 1, minWidth: 0, padding: '13px 0', border: 'none', background: 'transparent', fontSize: 15, color: disabled ? '#9ca3af' : '#1f2937', outline: 'none' }} />
         {suffix && <span style={{ marginLeft: 6, fontSize: 13, color: '#9ca3af', fontWeight: 500, flexShrink: 0 }}>{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+// 주소 입력 필드 + 검색 버튼
+function AddressField({ label, value, onChange, onSearch, placeholder, icon }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>{label}</label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#f8f9fb', borderRadius: 12, border: '1.5px solid #e2e8f0', padding: '0 14px', minWidth: 0 }}>
+          {icon && <span style={{ marginRight: 8, fontSize: 16, opacity: 0.5, flexShrink: 0 }}>{icon}</span>}
+          <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+            style={{ flex: 1, minWidth: 0, padding: '13px 0', border: 'none', background: 'transparent', fontSize: 15, color: '#1f2937', outline: 'none' }} />
+        </div>
+        <button onClick={onSearch} style={{
+          padding: '0 14px', borderRadius: 12, border: '1.5px solid #bfdbfe', background: '#eff6ff',
+          color: '#2563eb', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0
+        }}>🔍</button>
       </div>
     </div>
   );
@@ -56,7 +78,7 @@ const defaultForm = {
   partner_id: null, partner_name: '',
   user_type: '',
   total_fare: '', payment_method: 'CASH', rider_memo: '',
-  _call_id: null, // 콜에서 진입한 경우
+  _call_id: null,
 };
 
 export default function RideNew({ user }) {
@@ -79,27 +101,11 @@ export default function RideNew({ user }) {
   const [manualCustomer, setManualCustomer] = useState(false);
   const [manualForm, setManualForm] = useState({ name: '', phone: '' });
   const [restored, setRestored] = useState(false);
+  const [addrSearch, setAddrSearch] = useState(null); // 'start' | 'end' | null
 
-  // 콜에서 진입 시 콜 데이터로 초기화, 아니면 임시저장 복원
   const [form, setForm] = useState(() => {
     if (fromCall) {
-      return {
-        ...defaultForm,
-        start_address: fromCall.start_address || '',
-        start_detail: fromCall.start_detail || '',
-        end_address: fromCall.end_address || '',
-        end_detail: fromCall.end_detail || '',
-        customer_id: fromCall.customer_id || null,
-        customer_name: fromCall.customer_name || '',
-        customer_phone: fromCall.customer_phone || '',
-        partner_id: fromCall.partner_id || null,
-        partner_name: fromCall.partner_name || '',
-        user_type: fromCall.partner_id ? 'partner' : fromCall.customer_id ? 'customer' : '',
-        total_fare: fromCall.estimated_fare ? String(fromCall.estimated_fare) : '',
-        payment_method: fromCall.payment_method || 'CASH',
-        rider_memo: fromCall.memo ? `[콜 #${fromCall.call_id}] ${fromCall.memo}` : `[콜 #${fromCall.call_id}]`,
-        _call_id: fromCall.call_id,
-      };
+      return { ...defaultForm, start_address: fromCall.start_address || '', start_detail: fromCall.start_detail || '', end_address: fromCall.end_address || '', end_detail: fromCall.end_detail || '', customer_id: fromCall.customer_id || null, customer_name: fromCall.customer_name || '', customer_phone: fromCall.customer_phone || '', partner_id: fromCall.partner_id || null, partner_name: fromCall.partner_name || '', user_type: fromCall.partner_id ? 'partner' : fromCall.customer_id ? 'customer' : '', total_fare: fromCall.estimated_fare ? String(fromCall.estimated_fare) : '', payment_method: fromCall.payment_method || 'CASH', rider_memo: fromCall.memo ? `[콜 #${fromCall.call_id}] ${fromCall.memo}` : `[콜 #${fromCall.call_id}]`, _call_id: fromCall.call_id };
     }
     const draft = loadDraft();
     if (draft && draft.started_at) { const { _savedAt, ...rest } = draft; return { ...defaultForm, ...rest }; }
@@ -108,9 +114,7 @@ export default function RideNew({ user }) {
 
   const didMount = useRef(false);
   useEffect(() => { if (!didMount.current) { didMount.current = true; if (!fromCall) { const draft = loadDraft(); if (draft && draft.started_at) setRestored(true); } } }, []);
-
   useEffect(() => { if (form.started_at && !fromCall) saveDraft(form); }, [form]);
-
   const up = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -118,7 +122,6 @@ export default function RideNew({ user }) {
     fetchPartners({ active_only: 'true' }).then(r => setPartnerList(r.data || [])).catch(() => {});
     fetchPaymentTypes({ active_only: 'true' }).then(r => setPaymentTypes(r.data || [])).catch(() => {});
   }, []);
-
   useEffect(() => { if (userModal && userTab === 'customer') { fetchCustomers({ q: userSearch || undefined }).then(r => setCustomerList(r.data || [])).catch(() => {}); } }, [userModal, userSearch, userTab]);
 
   const filteredPartners = partnerList.filter(p => !userSearch || p.name.includes(userSearch));
@@ -139,6 +142,18 @@ export default function RideNew({ user }) {
     );
   };
 
+  // 주소 검색 결과 적용
+  const handleAddrSelect = (result) => {
+    if (addrSearch === 'start') {
+      const now = form.started_at || new Date().toISOString().slice(0, 19).replace('T', ' ');
+      setForm(f => ({ ...f, start_address: result.address || result.name, start_lat: result.lat, start_lng: result.lng, started_at: now }));
+    } else {
+      const now = form.ended_at || new Date().toISOString().slice(0, 19).replace('T', ' ');
+      setForm(f => ({ ...f, end_address: result.address || result.name, end_lat: result.lat, end_lng: result.lng, ended_at: now }));
+    }
+    setAddrSearch(null);
+  };
+
   const handleSave = async () => {
     if (!form.started_at) { alert('출발 버튼을 먼저 눌러주세요.'); return; }
     setSaving(true);
@@ -146,15 +161,8 @@ export default function RideNew({ user }) {
       const body = { ...form, total_fare: form.total_fare ? parseInt(form.total_fare) : null, cash_amount: form.payment_method === 'CASH' && form.total_fare ? parseInt(form.total_fare) : null };
       delete body._call_id;
       const result = await createRide(body);
-
-      // 콜에서 진입한 경우 콜 완료 처리
-      if (form._call_id && result.ride_id) {
-        try { await completeCall(form._call_id, { ride_id: result.ride_id }); } catch (e) { console.error('콜 완료 처리 실패:', e); }
-      }
-
-      clearDraft();
-      alert('운행일지가 저장되었습니다.');
-      nav('/');
+      if (form._call_id && result.ride_id) { try { await completeCall(form._call_id, { ride_id: result.ride_id }); } catch (e) { console.error('콜 완료 처리 실패:', e); } }
+      clearDraft(); alert('운행일지가 저장되었습니다.'); nav('/');
     } catch (err) { alert(err.response?.data?.error || '저장에 실패했습니다.'); }
     finally { setSaving(false); }
   };
@@ -168,28 +176,34 @@ export default function RideNew({ user }) {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc', paddingBottom: 100, overflowX: 'hidden' }}>
+      {/* 주소 검색 모달 */}
+      {addrSearch && (
+        <AddressSearchModal
+          title={addrSearch === 'start' ? '출발지 검색' : '도착지 검색'}
+          onSelect={handleAddrSelect}
+          onClose={() => setAddrSearch(null)}
+          currentLat={form.start_lat}
+          currentLng={form.start_lng}
+        />
+      )}
+
       <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(247,248,252,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <div style={{ padding: '12px 20px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div onClick={handleBack} style={{ fontSize: 18, cursor: 'pointer' }}>← <span style={{ fontWeight: 800 }}>운행기록 작성</span></div>
         </div>
         <div style={{ padding: '6px 20px 12px', display: 'flex', gap: 10 }}>
-          <button onClick={() => handleGPS('dep')} disabled={depLoading} style={{ flex: 1, padding: '14px 0', borderRadius: 14, border: 'none', fontSize: 15, fontWeight: 800, cursor: 'pointer', background: form.start_lat ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: form.start_lat ? 'white' : '#1d4ed8' }}>{depLoading ? '위치 확인 중...' : form.start_lat ? '✓ 출발' : '출발'}</button>
-          <button onClick={() => handleGPS('arr')} disabled={arrLoading} style={{ flex: 1, padding: '14px 0', borderRadius: 14, border: 'none', fontSize: 15, fontWeight: 800, cursor: 'pointer', background: form.end_lat ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : 'linear-gradient(135deg, #fee2e2, #fecaca)', color: form.end_lat ? 'white' : '#b91c1c' }}>{arrLoading ? '위치 확인 중...' : form.end_lat ? '✓ 도착' : '도착'}</button>
+          <button onClick={() => handleGPS('dep')} disabled={depLoading} style={{ flex: 1, padding: '14px 0', borderRadius: 14, border: 'none', fontSize: 15, fontWeight: 800, cursor: 'pointer', background: form.start_lat ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: form.start_lat ? 'white' : '#1d4ed8' }}>{depLoading ? '위치 확인 중...' : form.start_lat ? '✓ 출발' : '📍 출발'}</button>
+          <button onClick={() => handleGPS('arr')} disabled={arrLoading} style={{ flex: 1, padding: '14px 0', borderRadius: 14, border: 'none', fontSize: 15, fontWeight: 800, cursor: 'pointer', background: form.end_lat ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : 'linear-gradient(135deg, #fee2e2, #fecaca)', color: form.end_lat ? 'white' : '#b91c1c' }}>{arrLoading ? '위치 확인 중...' : form.end_lat ? '✓ 도착' : '📍 도착'}</button>
         </div>
       </div>
 
       <div style={{ padding: '14px 20px' }}>
-        {/* 콜 연동 배너 */}
         {fromCall && (
           <div style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 14, background: '#eff6ff', border: '1.5px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 20 }}>📞</span>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>콜 #{fromCall.call_id}에서 진입</div>
-              <div style={{ fontSize: 11, color: '#3b82f6' }}>출발지/도착지/고객/요금이 자동 입력되었습니다</div>
-            </div>
+            <div><div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>콜 #{fromCall.call_id}에서 진입</div><div style={{ fontSize: 11, color: '#3b82f6' }}>출발지/도착지/고객/요금이 자동 입력되었습니다</div></div>
           </div>
         )}
-
         {restored && !fromCall && (
           <div style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 14, background: '#fffbeb', border: '1.5px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ fontSize: 13, color: '#92400e' }}>📋 이전 작성 데이터가 복원되었습니다<div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>출발: {form.started_at?.slice(0, 16)}</div></div>
@@ -199,6 +213,8 @@ export default function RideNew({ user }) {
 
         <div style={{ background: 'white', borderRadius: 22, padding: 22, boxShadow: '0 2px 16px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           <Field label="운행기사" value={user?.name || ''} onChange={() => {}} icon="👤" disabled />
+
+          {/* 픽업기사 */}
           <div style={{ marginBottom: 14, position: 'relative' }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>픽업기사</label>
             {form.pickup_rider_name ? (<div style={{ display: 'flex', alignItems: 'center', background: '#f0fdf4', borderRadius: 12, border: '1.5px solid #86efac', padding: '0 14px' }}><span style={{ flex: 1, padding: '13px 0', fontSize: 15, fontWeight: 600, color: '#166534' }}>🙋 {form.pickup_rider_name}</span><span onClick={() => setForm(f => ({ ...f, pickup_rider_id: null, pickup_rider_name: '' }))} style={{ cursor: 'pointer', fontSize: 18, color: '#9ca3af' }}>✕</span></div>)
@@ -206,22 +222,26 @@ export default function RideNew({ user }) {
             {pickupOpen && (<div style={{ position: 'absolute', left: 0, right: 0, zIndex: 20, background: 'white', borderRadius: 14, marginTop: 4, boxShadow: '0 8px 32px rgba(0,0,0,0.15)', border: '1px solid #e5e7eb', overflow: 'hidden' }}><div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}><input autoFocus value={pickupSearch} onChange={e => setPickupSearch(e.target.value)} placeholder="기사명 검색..." style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none' }} /></div><div style={{ maxHeight: 200, overflowY: 'auto' }}>{filteredRiders.map(d => (<div key={d.user_id} onClick={() => { setForm(f => ({ ...f, pickup_rider_id: d.user_id, pickup_rider_name: d.name })); setPickupOpen(false); setPickupSearch(''); }} style={{ padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid #f8f9fb', fontSize: 14 }}>{d.name} <span style={{ color: '#94a3b8', fontSize: 12 }}>{d.vehicle_number}</span></div>))}{filteredRiders.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>검색 결과 없음</div>}</div><div onClick={() => { setPickupOpen(false); setPickupSearch(''); }} style={{ padding: 10, textAlign: 'center', fontSize: 13, color: '#9ca3af', cursor: 'pointer', borderTop: '1px solid #f1f5f9' }}>닫기</div></div>)}
           </div>
 
+          {/* ── 출발지 ── */}
           <div style={{ height: 1, background: '#e5e7eb', margin: '20px 0' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}><div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🔵</div><div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>출발지 정보</div></div>
-          {form.start_lat ? <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 13, color: '#1e40af' }}>📡 GPS 위치가 자동 입력되었습니다 ({form.started_at?.slice(11, 16)})</div>
-          : <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#f8f9fb', border: '1px dashed #d1d5db', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>상단의 <strong style={{ color: '#2563eb' }}>출발</strong> 버튼을 눌러주세요</div>}
-          <Field label="출발지 주소" value={form.start_address} onChange={up('start_address')} placeholder="GPS 자동 입력" icon="📍" />
+          {form.start_lat ? <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 13, color: '#1e40af' }}>📡 위치가 입력되었습니다 ({form.started_at?.slice(11, 16)})</div>
+          : <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#f8f9fb', border: '1px dashed #d1d5db', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}><strong style={{ color: '#2563eb' }}>출발</strong> 버튼 또는 🔍 검색으로 입력</div>}
+          <AddressField label="출발지 주소" value={form.start_address} onChange={up('start_address')} onSearch={() => setAddrSearch('start')} placeholder="GPS 자동 입력 또는 검색" icon="📍" />
           <Field label="상세주소 (상호명, 건물명)" value={form.start_detail} onChange={up('start_detail')} placeholder="예) OO아파트" icon="🏢" />
-          <MiniMap lat={form.start_lat} lng={form.start_lng} label="출발지" />
 
+          {/* ── 도착지 ── */}
           <div style={{ height: 1, background: '#e5e7eb', margin: '20px 0' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}><div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #dc2626, #b91c1c)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🔴</div><div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>도착지 정보</div></div>
-          {form.end_lat ? <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#fef2f2', border: '1px solid #fecaca', fontSize: 13, color: '#991b1b' }}>📡 GPS 위치가 자동 입력되었습니다 ({form.ended_at?.slice(11, 16)})</div>
-          : <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#f8f9fb', border: '1px dashed #d1d5db', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>상단의 <strong style={{ color: '#dc2626' }}>도착</strong> 버튼을 눌러주세요</div>}
-          <Field label="도착지 주소" value={form.end_address} onChange={up('end_address')} placeholder="GPS 자동 입력" icon="📍" />
+          {form.end_lat ? <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#fef2f2', border: '1px solid #fecaca', fontSize: 13, color: '#991b1b' }}>📡 위치가 입력되었습니다 ({form.ended_at?.slice(11, 16)})</div>
+          : <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#f8f9fb', border: '1px dashed #d1d5db', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}><strong style={{ color: '#dc2626' }}>도착</strong> 버튼 또는 🔍 검색으로 입력</div>}
+          <AddressField label="도착지 주소" value={form.end_address} onChange={up('end_address')} onSearch={() => setAddrSearch('end')} placeholder="GPS 자동 입력 또는 검색" icon="📍" />
           <Field label="상세주소 (상호명, 건물명)" value={form.end_detail} onChange={up('end_detail')} placeholder="예) OO호텔" icon="🏢" />
-          <MiniMap lat={form.end_lat} lng={form.end_lng} label="도착지" />
 
+          {/* ── 카카오 지도 (출발+도착 통합) ── */}
+          <KakaoMiniMap startLat={form.start_lat} startLng={form.start_lng} endLat={form.end_lat} endLng={form.end_lng} height={250} />
+
+          {/* ── 요금 ── */}
           <div style={{ height: 1, background: '#e5e7eb', margin: '20px 0' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}><div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>💰</div><div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e' }}>요금 정보</div></div>
 
@@ -255,6 +275,7 @@ export default function RideNew({ user }) {
         <button onClick={handleSave} disabled={saving} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: 16, fontWeight: 800, color: 'white', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? '저장 중...' : '저장하기 ✓'}</button>
       </div>
 
+      {/* 이용객 모달 */}
       {userModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setUserModal(false)}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, maxHeight: '80vh', background: 'white', borderRadius: '24px 24px 0 0', display: 'flex', flexDirection: 'column' }}>

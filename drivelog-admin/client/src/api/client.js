@@ -42,6 +42,8 @@ export const fetchRiderLimit = (params) => api.get('/users/rider-limit', { param
 export const fetchMasterCount = () => api.get('/users/master-count').then(r => r.data);
 export const createUser = (body) => api.post('/users', body).then(r => r.data);
 export const updateUser = (id, body) => api.put(`/users/${id}`, body).then(r => r.data);
+export const unlockUser = (id) => api.put(`/users/${id}/unlock`).then(r => r.data);
+export const resetUserPassword = (id, body) => api.put(`/users/${id}/reset-password`, body).then(r => r.data);
 
 export const fetchCustomers = (params) => api.get('/customers', { params }).then(r => r.data);
 export const createCustomer = (body) => api.post('/customers', body).then(r => r.data);
@@ -119,5 +121,10 @@ export const updateCall = (id, body) => api.put(`/calls/${id}`, body).then(r => 
 export const acceptCall = (id) => api.put(`/calls/${id}/accept`).then(r => r.data);
 export const completeCall = (id, body) => api.put(`/calls/${id}/complete`, body).then(r => r.data);
 export const cancelCall = (id, body) => api.put(`/calls/${id}/cancel`, body).then(r => r.data);
+
+// 감사 로그
+export const fetchAuditLogs = (params) => api.get('/audit-logs', { params }).then(r => r.data);
+export const fetchAuditLogActions = () => api.get('/audit-logs/actions').then(r => r.data);
+export const fetchAuditLogStats = (params) => api.get('/audit-logs/stats', { params }).then(r => r.data);
 
 export default api;
