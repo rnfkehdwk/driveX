@@ -65,6 +65,13 @@ function AddressField({ label, value, onChange, onSearch, placeholder, icon }) {
   );
 }
 
+// 한국 로컬 시간 포맷 (yyyy-MM-dd HH:mm:ss)
+function getLocalNow() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 function loadDraft() { try { const raw = localStorage.getItem(DRAFT_KEY); if (!raw) return null; const draft = JSON.parse(raw); if (draft._savedAt && Date.now() - draft._savedAt > 24*60*60*1000) { localStorage.removeItem(DRAFT_KEY); return null; } return draft; } catch { return null; } }
 function saveDraft(form) { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...form, _savedAt: Date.now() })); } catch {} }
 function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
@@ -132,7 +139,7 @@ export default function RideNew({ user }) {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
-        const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        const now = getLocalNow();
         const addr = await reverseGeocode(latitude, longitude);
         if (type === 'dep') { setForm(f => ({ ...f, start_lat: latitude, start_lng: longitude, start_address: addr, started_at: now })); setDepLoading(false); }
         else { setForm(f => ({ ...f, end_lat: latitude, end_lng: longitude, end_address: addr, ended_at: now })); setArrLoading(false); }
@@ -145,10 +152,10 @@ export default function RideNew({ user }) {
   // 주소 검색 결과 적용
   const handleAddrSelect = (result) => {
     if (addrSearch === 'start') {
-      const now = form.started_at || new Date().toISOString().slice(0, 19).replace('T', ' ');
+      const now = form.started_at || getLocalNow();
       setForm(f => ({ ...f, start_address: result.address || result.name, start_lat: result.lat, start_lng: result.lng, started_at: now }));
     } else {
-      const now = form.ended_at || new Date().toISOString().slice(0, 19).replace('T', ' ');
+      const now = form.ended_at || getLocalNow();
       setForm(f => ({ ...f, end_address: result.address || result.name, end_lat: result.lat, end_lng: result.lng, ended_at: now }));
     }
     setAddrSearch(null);
@@ -229,6 +236,8 @@ export default function RideNew({ user }) {
           : <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#f8f9fb', border: '1px dashed #d1d5db', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}><strong style={{ color: '#2563eb' }}>출발</strong> 버튼 또는 🔍 검색으로 입력</div>}
           <AddressField label="출발지 주소" value={form.start_address} onChange={up('start_address')} onSearch={() => setAddrSearch('start')} placeholder="GPS 자동 입력 또는 검색" icon="📍" />
           <Field label="상세주소 (상호명, 건물명)" value={form.start_detail} onChange={up('start_detail')} placeholder="예) OO아파트" icon="🏢" />
+          {/* 출발지 개별 지도 */}
+          <KakaoMiniMap startLat={form.start_lat} startLng={form.start_lng} height={180} />
 
           {/* ── 도착지 ── */}
           <div style={{ height: 1, background: '#e5e7eb', margin: '20px 0' }} />
@@ -237,9 +246,8 @@ export default function RideNew({ user }) {
           : <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, background: '#f8f9fb', border: '1px dashed #d1d5db', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}><strong style={{ color: '#dc2626' }}>도착</strong> 버튼 또는 🔍 검색으로 입력</div>}
           <AddressField label="도착지 주소" value={form.end_address} onChange={up('end_address')} onSearch={() => setAddrSearch('end')} placeholder="GPS 자동 입력 또는 검색" icon="📍" />
           <Field label="상세주소 (상호명, 건물명)" value={form.end_detail} onChange={up('end_detail')} placeholder="예) OO호텔" icon="🏢" />
-
-          {/* ── 카카오 지도 (출발+도착 통합) ── */}
-          <KakaoMiniMap startLat={form.start_lat} startLng={form.start_lng} endLat={form.end_lat} endLng={form.end_lng} height={250} />
+          {/* 도착지 개별 지도 */}
+          <KakaoMiniMap startLat={form.end_lat} startLng={form.end_lng} height={180} />
 
           {/* ── 요금 ── */}
           <div style={{ height: 1, background: '#e5e7eb', margin: '20px 0' }} />

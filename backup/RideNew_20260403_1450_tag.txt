@@ -1,0 +1,2 @@
+// 전체 백업은 filesystem:read_text_file로 읽은 원본 내용을 별도 저장
+// 이 파일은 백업 태그 목적
