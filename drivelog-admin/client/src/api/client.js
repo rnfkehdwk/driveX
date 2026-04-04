@@ -112,6 +112,7 @@ export const replyInquiry = (id, body) => api.put(`/inquiries/${id}/reply`, body
 export const updateInquiryStatus = (id, body) => api.put(`/inquiries/${id}/status`, body).then(r => r.data);
 
 export const fetchMonthlyReport = (params) => api.get('/stats/monthly-report', { params }).then(r => r.data);
+export const fetchMasterDashboard = (params) => api.get('/stats/master-dashboard', { params }).then(r => r.data);
 
 // 콜 관리
 export const fetchCalls = (params) => api.get('/calls', { params }).then(r => r.data);

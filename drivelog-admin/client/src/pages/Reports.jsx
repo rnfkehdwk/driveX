@@ -126,15 +126,18 @@ export default function Reports() {
           {/* 제휴업체 TOP 10 */}
           <div style={{ background: 'white', borderRadius: 14, padding: 24, border: '1px solid #f1f5f9' }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, marginTop: 0, marginBottom: 12 }}>제휴업체 콜 TOP 10</h2>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {(report.topPartners || []).map((p, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a' }}>
-                  <span style={{ fontWeight: 700, color: '#d97706', fontSize: 13 }}>{i + 1}.</span>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</span>
-                  <span style={{ fontSize: 12, color: '#d97706', fontWeight: 700 }}>{Number(p.calls)}건</span>
-                </div>
-              ))}
-            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr style={{ background: '#f8fafc' }}><th style={{ padding: '8px 10px', fontSize: 12, textAlign: 'center', fontWeight: 600, color: '#64748b', width: 40 }}>순위</th><th style={{ padding: '8px 10px', fontSize: 12, textAlign: 'left', fontWeight: 600, color: '#64748b' }}>업체명</th><th style={{ padding: '8px 10px', fontSize: 12, textAlign: 'right', fontWeight: 600, color: '#64748b' }}>콜 건수</th></tr></thead>
+              <tbody>
+                {(report.topPartners || []).map((p, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #f8fafc' }}>
+                    <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 800, textAlign: 'center', color: i < 3 ? '#d97706' : '#94a3b8' }}>{i + 1}</td>
+                    <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 600 }}>{p.name}</td>
+                    <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right', fontWeight: 700, color: '#d97706' }}>{Number(p.calls)}건</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

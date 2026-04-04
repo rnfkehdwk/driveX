@@ -87,7 +87,7 @@ export default function Dashboard() {
             <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < topCustomers.length - 1 ? '1px solid #f8fafc' : 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 24, height: 24, borderRadius: 6, background: i < 3 ? '#2563eb' : '#e2e8f0', color: i < 3 ? 'white' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{i + 1}</div>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{c.customer_code || c.name}</span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{c.name || c.customer_code}</span>
               </div>
               <span style={{ fontSize: 13, fontWeight: 700, color: '#2563eb' }}>{Number(c.total_fare || 0).toLocaleString()}원</span>
             </div>

@@ -56,80 +56,71 @@ router.get('/mileage', authenticate, authorize('MASTER', 'SUPER_ADMIN'), checkLi
   } catch (err) { console.error('GET /stats/mileage error:', err); res.status(500).json({ error: '마일리지 통계 조회에 실패했습니다.' }); }
 });
 
-// GET /api/stats/monthly-report — 월간 종합 리포트
 router.get('/monthly-report', authenticate, authorize('MASTER', 'SUPER_ADMIN'), checkLicense, async (req, res) => {
   try {
     const { month } = req.query;
     const companyId = getCompanyId(req.user, req.query);
     if (!companyId || !month) return res.status(400).json({ error: '업체와 월을 선택하세요.' });
-
     let licenseFilter = '';
     const licenseParams = [];
     if (req.licenseExpired && req.licenseExpires) { licenseFilter = ' AND DATE(r.started_at) <= ?'; licenseParams.push(req.licenseExpires); }
 
-    // 1. 매출 요약
-    const [salesSummary] = await pool.execute(
-      `SELECT COUNT(*) AS total_rides, COALESCE(SUM(r.total_fare), 0) AS total_fare,
-              COALESCE(SUM(r.cash_amount), 0) AS total_cash,
-              COALESCE(SUM(r.mileage_used), 0) AS total_mileage_used,
-              COALESCE(SUM(r.mileage_earned), 0) AS total_mileage_earned,
-              CAST(SUM(CASE WHEN r.partner_id IS NOT NULL THEN 1 ELSE 0 END) AS UNSIGNED) AS partner_calls,
-              COALESCE(AVG(r.total_fare), 0) AS avg_fare
-       FROM rides r WHERE r.company_id = ? AND r.status != 'CANCELLED'
-         AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter}`,
-      [companyId, month, ...licenseParams]
+    const [salesSummary] = await pool.execute(`SELECT COUNT(*) AS total_rides, COALESCE(SUM(r.total_fare), 0) AS total_fare, COALESCE(SUM(r.cash_amount), 0) AS total_cash, COALESCE(SUM(r.mileage_used), 0) AS total_mileage_used, COALESCE(SUM(r.mileage_earned), 0) AS total_mileage_earned, CAST(SUM(CASE WHEN r.partner_id IS NOT NULL THEN 1 ELSE 0 END) AS UNSIGNED) AS partner_calls, COALESCE(AVG(r.total_fare), 0) AS avg_fare FROM rides r WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter}`, [companyId, month, ...licenseParams]);
+    const [riderStats] = await pool.execute(`SELECT u.name AS rider_name, COUNT(*) AS rides, COALESCE(SUM(r.total_fare), 0) AS fare FROM rides r JOIN users u ON r.rider_id = u.user_id WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter} GROUP BY r.rider_id, u.name ORDER BY fare DESC`, [companyId, month, ...licenseParams]);
+    const [topCustomers] = await pool.execute(`SELECT c.name, c.customer_code, COUNT(r.ride_id) AS rides, COALESCE(SUM(r.total_fare), 0) AS fare FROM rides r JOIN customers c ON r.customer_id = c.customer_id WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter} GROUP BY r.customer_id, c.name, c.customer_code ORDER BY fare DESC LIMIT 10`, [companyId, month, ...licenseParams]);
+    const [topPartners] = await pool.execute(`SELECT p.name, COUNT(r.ride_id) AS calls FROM rides r JOIN partner_companies p ON r.partner_id = p.partner_id WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter} GROUP BY r.partner_id, p.name ORDER BY calls DESC LIMIT 10`, [companyId, month, ...licenseParams]);
+    const [dailyTrend] = await pool.execute(`SELECT DATE(r.started_at) AS date, COUNT(*) AS rides, COALESCE(SUM(r.total_fare), 0) AS fare FROM rides r WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter} GROUP BY DATE(r.started_at) ORDER BY date`, [companyId, month, ...licenseParams]);
+    const [companyInfo] = await pool.execute(`SELECT c.company_name, c.company_code, p.plan_name FROM companies c LEFT JOIN billing_plans p ON c.plan_id = p.plan_id WHERE c.company_id = ?`, [companyId]);
+
+    res.json({ company: companyInfo[0] || {}, month, sales: salesSummary[0] || {}, riders: riderStats, topCustomers, topPartners, dailyTrend });
+  } catch (err) { console.error('GET /stats/monthly-report error:', err); res.status(500).json({ error: '월간 리포트 조회 실패' }); }
+});
+
+// MASTER 전용 대시보드
+router.get('/master-dashboard', authenticate, authorize('MASTER'), async (req, res) => {
+  try {
+    const { month } = req.query;
+    const curMonth = month || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+
+    const [companies] = await pool.query(
+      `SELECT c.company_id, c.company_name, c.company_code, c.status, c.license_expires, c.ceo_name,
+              p.plan_name,
+              (SELECT COUNT(*) FROM users u WHERE u.company_id = c.company_id AND u.role = 'RIDER' AND u.status = 'ACTIVE') AS rider_count,
+              (SELECT COALESCE(SUM(r.total_fare),0) FROM rides r WHERE r.company_id = c.company_id AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at,'%Y-%m') = ?) AS monthly_fare,
+              (SELECT COUNT(*) FROM rides r WHERE r.company_id = c.company_id AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at,'%Y-%m') = ?) AS monthly_rides
+       FROM companies c LEFT JOIN billing_plans p ON c.plan_id = p.plan_id ORDER BY monthly_fare DESC`,
+      [curMonth, curMonth]
     );
 
-    // 2. 기사별 실적
-    const [riderStats] = await pool.execute(
-      `SELECT u.name AS rider_name, COUNT(*) AS rides, COALESCE(SUM(r.total_fare), 0) AS fare
-       FROM rides r JOIN users u ON r.rider_id = u.user_id
-       WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter}
-       GROUP BY r.rider_id, u.name ORDER BY fare DESC`,
-      [companyId, month, ...licenseParams]
-    );
+    const totalCompanies = companies.length;
+    const activeCompanies = companies.filter(c => c.status === 'ACTIVE').length;
+    const expiredCompanies = companies.filter(c => c.status === 'EXPIRED' || (c.license_expires && new Date(c.license_expires) < new Date())).length;
+    const totalFare = companies.reduce((s, c) => s + Number(c.monthly_fare || 0), 0);
+    const totalRides = companies.reduce((s, c) => s + Number(c.monthly_rides || 0), 0);
+    const totalRiders = companies.reduce((s, c) => s + Number(c.rider_count || 0), 0);
 
-    // 3. 고객 TOP 10
-    const [topCustomers] = await pool.execute(
-      `SELECT c.name, c.customer_code, COUNT(r.ride_id) AS rides, COALESCE(SUM(r.total_fare), 0) AS fare
-       FROM rides r JOIN customers c ON r.customer_id = c.customer_id
-       WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter}
-       GROUP BY r.customer_id, c.name, c.customer_code ORDER BY fare DESC LIMIT 10`,
-      [companyId, month, ...licenseParams]
-    );
+    const soon = new Date(); soon.setDate(soon.getDate() + 30);
+    const expiringCompanies = companies.filter(c => {
+      if (!c.license_expires) return false;
+      const exp = new Date(c.license_expires);
+      return exp > new Date() && exp <= soon;
+    });
 
-    // 4. 제휴업체 TOP 10
-    const [topPartners] = await pool.execute(
-      `SELECT p.name, COUNT(r.ride_id) AS calls
-       FROM rides r JOIN partner_companies p ON r.partner_id = p.partner_id
-       WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter}
-       GROUP BY r.partner_id, p.name ORDER BY calls DESC LIMIT 10`,
-      [companyId, month, ...licenseParams]
-    );
-
-    // 5. 일별 매출 추이
-    const [dailyTrend] = await pool.execute(
-      `SELECT DATE(r.started_at) AS date, COUNT(*) AS rides, COALESCE(SUM(r.total_fare), 0) AS fare
-       FROM rides r WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE_FORMAT(r.started_at, '%Y-%m') = ? ${licenseFilter}
-       GROUP BY DATE(r.started_at) ORDER BY date`,
-      [companyId, month, ...licenseParams]
-    );
-
-    // 6. 업체 정보
-    const [companyInfo] = await pool.execute(
-      `SELECT c.company_name, c.company_code, p.plan_name FROM companies c LEFT JOIN billing_plans p ON c.plan_id = p.plan_id WHERE c.company_id = ?`, [companyId]
+    const [inquiries] = await pool.query(
+      `SELECT i.id AS inquiry_id, i.title, i.inquiry_type, i.status, i.created_at, c.company_name
+       FROM inquiries i LEFT JOIN companies c ON i.company_id = c.company_id
+       ORDER BY i.created_at DESC LIMIT 5`
     );
 
     res.json({
-      company: companyInfo[0] || {},
-      month,
-      sales: salesSummary[0] || {},
-      riders: riderStats,
-      topCustomers,
-      topPartners,
-      dailyTrend,
+      summary: { totalCompanies, activeCompanies, expiredCompanies, totalFare, totalRides, totalRiders },
+      topFare: companies.filter(c => Number(c.monthly_fare) > 0).slice(0, 10),
+      topRides: [...companies].sort((a, b) => Number(b.monthly_rides) - Number(a.monthly_rides)).filter(c => Number(c.monthly_rides) > 0).slice(0, 10),
+      expiringCompanies,
+      recentInquiries: inquiries,
+      month: curMonth,
     });
-  } catch (err) { console.error('GET /stats/monthly-report error:', err); res.status(500).json({ error: '월간 리포트 조회 실패' }); }
+  } catch (err) { console.error('GET /stats/master-dashboard error:', err); res.status(500).json({ error: 'MASTER 대시보드 조회 실패' }); }
 });
 
 module.exports = router;

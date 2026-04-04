@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'reac
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import MasterDashboard from './pages/MasterDashboard';
 import Rides from './pages/Rides';
 import Partners from './pages/Partners';
 import Mileage from './pages/Mileage';
@@ -34,7 +35,7 @@ const superAdminNavGroups = [
   { title: '대시보드', items: [{ path: '/', label: '대시보드', icon: '📊' }, { path: '/reports', label: '월간리포트', icon: '📈' }]},
   { title: '운행', items: [{ path: '/calls', label: '콜 관리', icon: '📞' }, { path: '/rides', label: '운행일지', icon: '🚗' }, { path: '/partners', label: '제휴업체 콜', icon: '🏢' }, { path: '/mileage', label: '마일리지', icon: '⭐' }]},
   { title: '정산', items: [{ path: '/settlements', label: '정산관리', icon: '💰' }, { path: '/fare-policies', label: '요금설정', icon: '💵' }, { path: '/billing', label: '사용료', icon: '🧾' }]},
-  { title: '관리', items: [{ path: '/users', label: '기사관리', icon: '🧑‍✈️' }, { path: '/customers', label: '고객관리', icon: '👤' }, { path: '/partner-manage', label: '제휴업체관리', icon: '🤝' }, { path: '/payment-types', label: '결제구분', icon: '💳' }, { path: '/my-inquiries', label: '문의하기', icon: '📩' }]},
+  { title: '관리', items: [{ path: '/users', label: '기사관리', icon: '🚘' }, { path: '/customers', label: '고객관리', icon: '👤' }, { path: '/partner-manage', label: '제휴업체관리', icon: '🤝' }, { path: '/payment-types', label: '결제구분', icon: '💳' }, { path: '/my-inquiries', label: '문의하기', icon: '📩' }]},
 ];
 
 // 기사수 초과 시 접근 가능한 경로
@@ -76,7 +77,7 @@ function RiderExceededOverlay({ user, onGoUsers, onClose }) {
     <div style={{ background: '#fffbeb', borderRadius: 12, padding: 16, marginBottom: 24, textAlign: 'left' }}>
       <div style={{ fontSize: 13, color: '#92400e', lineHeight: 1.8 }}>📌 기사관리에서 <strong>{user.rider_current - user.rider_max}명</strong>을 비활성 처리하면 정상 이용 가능합니다.<br />📌 또는 사용료 메뉴에서 요금제 업그레이드를 요청하세요.</div>
     </div>
-    <button onClick={onGoUsers} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 10 }}>🧑‍✈️ 기사관리로 이동</button>
+    <button onClick={onGoUsers} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', background: '#2563eb', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 10 }}>🚘 기사관리로 이동</button>
     <button onClick={onClose} style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>닫기</button>
   </div></div>);
 }
@@ -189,7 +190,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={user ? <Navigate to="/" /> : <Login onLogin={setUser} onRegister={() => navigate('/register')} />} />
           <Route path="/register" element={<Register onBack={() => navigate('/login')} />} />
-          <Route path="/" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Dashboard />}</RoleGuard>} />
+          <Route path="/" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : (user?.role === 'MASTER' ? <MasterDashboard /> : <Dashboard />)}</RoleGuard>} />
           <Route path="/reports" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Reports />}</RoleGuard>} />
           <Route path="/calls" element={<RoleGuard user={user} roles={['SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <CallManage />}</RoleGuard>} />
           <Route path="/rides" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Rides />}</RoleGuard>} />
