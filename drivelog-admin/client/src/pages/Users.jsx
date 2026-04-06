@@ -14,6 +14,8 @@ export default function Users() {
   const [users, setUsers] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [search, setSearch] = useState('');
+  const [filterRole, setFilterRole] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ login_id: '', password: '', name: '', phone: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' });
@@ -70,10 +72,15 @@ export default function Users() {
   const canToggle = (u) => isMaster ? u.user_id !== currentUser.user_id : u.role !== 'MASTER';
 
   const headers = isMaster
-    ? [{ key: 'company_name', label: '업체명' }, { key: 'name', label: '이름' }, { key: null, label: '로그인ID' }, { key: null, label: '역할' }, { key: null, label: '연락처' }, { key: null, label: '차량번호' }, { key: null, label: '상태' }, { key: null, label: '최근로그인' }, { key: null, label: '관리' }]
-    : [{ key: 'name', label: '이름' }, { key: null, label: '로그인ID' }, { key: null, label: '역할' }, { key: null, label: '연락처' }, { key: null, label: '차량번호' }, { key: null, label: '상태' }, { key: null, label: '최근로그인' }, { key: null, label: '관리' }];
+    ? [{ key: 'company_name', label: '업체명' }, { key: 'name', label: '이름' }, { key: 'login_id', label: '로그인ID' }, { key: 'role', label: '역할' }, { key: null, label: '연락처' }, { key: null, label: '차량번호' }, { key: 'status', label: '상태' }, { key: null, label: '최근로그인' }, { key: null, label: '관리' }]
+    : [{ key: 'name', label: '이름' }, { key: 'login_id', label: '로그인ID' }, { key: 'role', label: '역할' }, { key: null, label: '연락처' }, { key: null, label: '차량번호' }, { key: 'status', label: '상태' }, { key: null, label: '최근로그인' }, { key: null, label: '관리' }];
 
-  const sorted = sort(users);
+  const filtered = users.filter(u => {
+    if (filterRole && u.role !== filterRole) return false;
+    if (filterStatus && u.status !== filterStatus) return false;
+    return true;
+  });
+  const sorted = sort(filtered);
   const roleOptions = [
     { value: 'RIDER', label: '일반 기사', color: '#2563eb', bg: '#eff6ff' },
     { value: 'SUPER_ADMIN', label: '업체 관리자', color: '#92400e', bg: '#fef3c7' },
@@ -84,8 +91,19 @@ export default function Users() {
     <div className="fade-in">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="이름, ID, 연락처 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, width: 240 }} />
-          <span style={{ fontSize: 13, color: '#94a3b8' }}>총 {users.length}명</span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="이름, ID, 연락처 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, width: 200 }} />
+          <select value={filterRole} onChange={e => setFilterRole(e.target.value)} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, background: 'white' }}>
+            <option value="">역할 전체</option>
+            <option value="MASTER">마스터</option>
+            <option value="SUPER_ADMIN">관리자</option>
+            <option value="RIDER">기사</option>
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, background: 'white' }}>
+            <option value="">상태 전체</option>
+            <option value="ACTIVE">활성</option>
+            <option value="SUSPENDED">정지</option>
+          </select>
+          <span style={{ fontSize: 13, color: '#94a3b8' }}>총 {sorted.length}명</span>
           {isMaster && <span style={{ fontSize: 11, color: '#9d174d', background: '#fce7f3', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>MASTER {masterCount.count}/{masterCount.max}</span>}
           {/* SUPER_ADMIN: 기사수 제한 배지 */}
           {!isMaster && riderLimit.max > 0 && (

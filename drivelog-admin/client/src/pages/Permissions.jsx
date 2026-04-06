@@ -207,8 +207,8 @@ function CompanyMatrix() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2, minWidth: 80 }}>no</th>
-              <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', position: 'sticky', left: 80, background: '#f8fafc', zIndex: 2, minWidth: 120 }}>업체명</th>
+              <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', borderRight: '1px solid #e2e8f0', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 3, minWidth: 50, maxWidth: 50, boxShadow: '1px 0 0 #e2e8f0' }}>no</th>
+              <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', borderRight: '1px solid #e2e8f0', position: 'sticky', left: 50, background: '#f8fafc', zIndex: 3, minWidth: 130, boxShadow: '2px 0 4px rgba(0,0,0,0.06)' }}>업체명</th>
               {filteredMenus.map(m => (
                 <th key={m.menu_key} style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 600, color: '#475569', fontSize: 11, borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: 70 }}>
                   <div>{m.menu_label}</div>
@@ -220,8 +220,8 @@ function CompanyMatrix() {
           <tbody>
             {companies.map((comp, idx) => (
               <tr key={comp.company_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '10px 12px', fontWeight: 600, color: '#64748b', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>{idx + 1}</td>
-                <td style={{ padding: '10px 12px', fontWeight: 700, color: '#1e293b', position: 'sticky', left: 80, background: 'white', zIndex: 1, whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '10px 12px', fontWeight: 600, color: '#64748b', borderRight: '1px solid #e2e8f0', position: 'sticky', left: 0, background: 'white', zIndex: 1, minWidth: 50, maxWidth: 50, boxShadow: '1px 0 0 #e2e8f0' }}>{idx + 1}</td>
+                <td style={{ padding: '10px 12px', fontWeight: 700, color: '#1e293b', borderRight: '1px solid #e2e8f0', position: 'sticky', left: 50, background: 'white', zIndex: 1, whiteSpace: 'nowrap', minWidth: 130, boxShadow: '2px 0 4px rgba(0,0,0,0.06)' }}>
                   <div>{comp.company_name}</div>
                   <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>{comp.company_code}</div>
                 </td>
