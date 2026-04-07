@@ -103,8 +103,8 @@ router.post('/', authenticate, authorize('SUPER_ADMIN'), checkLicense, async (re
   } catch (err) { console.error('POST /calls error:', err); res.status(500).json({ error: '콜 생성 실패' }); }
 });
 
-// PUT /api/calls/:id/accept — 기사가 콜 수락
-router.put('/:id/accept', authenticate, authorize('RIDER'), async (req, res) => {
+// PUT /api/calls/:id/accept — 콜 수락 (RIDER 일반기사, SUPER_ADMIN 사장겸업체관리자)
+router.put('/:id/accept', authenticate, authorize('RIDER', 'SUPER_ADMIN'), async (req, res) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -142,7 +142,8 @@ router.put('/:id/accept', authenticate, authorize('RIDER'), async (req, res) => 
 });
 
 // PUT /api/calls/:id/complete — 운행 완료 (rides에 자동 연결)
-router.put('/:id/complete', authenticate, authorize('RIDER'), async (req, res) => {
+// RIDER + SUPER_ADMIN 모두 가능 (본인이 수락한 콜만)
+router.put('/:id/complete', authenticate, authorize('RIDER', 'SUPER_ADMIN'), async (req, res) => {
   try {
     const [calls] = await pool.execute(
       'SELECT * FROM calls WHERE call_id = ? AND assigned_rider_id = ?',

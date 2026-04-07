@@ -38,8 +38,13 @@ export default function Dashboard() {
   }));
   const chartData14 = allChartData.slice(-14);
   const chartData7 = allChartData.slice(-7);
+  const hasChartData = allChartData.some(d => d.매출 > 0 || d.운행건수 > 0 || d.콜수 > 0);
+  const has7DayCustomerData = chartData7.some(d => d.운행건수 > 0);
+  const has7DayPartnerData = chartData7.some(d => d.콜수 > 0);
 
-  const topPartners = (partners.data || []).slice(0, 6);
+  // 매출 0인 고객/파트너는 의미 없는 row이므로 제거
+  const visibleCustomers = topCustomers.filter(c => Number(c.total_fare || 0) > 0);
+  const topPartners = (partners.data || []).filter(p => Number(p.calls || 0) > 0).slice(0, 6);
   const totalCalls = Number(partners.totalCalls || 0) || topPartners.reduce((s, p) => s + Number(p.calls || 0), 0);
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>데이터 로딩 중...</div>;
@@ -69,12 +74,16 @@ export default function Dashboard() {
           <div style={{ fontSize: 11, color: '#94a3b8' }}>최근 14일</div>
         </div>
         <ResponsiveContainer width="100%" height={isMobile ? 200 : 280}>
-          <BarChart data={chartData14}>
-            <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: isMobile ? 9 : 11 }} axisLine={false} tickLine={false} interval={isMobile ? 1 : 0} />
-            <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/10000).toFixed(0)}만`} width={40} />
-            <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 12 }} formatter={v => [`${v.toLocaleString()}원`, '매출']} />
-            <Bar dataKey="매출" fill="#2563eb" radius={[6, 6, 0, 0]} />
-          </BarChart>
+          {hasChartData ? (
+            <BarChart data={chartData14}>
+              <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: isMobile ? 9 : 11 }} axisLine={false} tickLine={false} interval={isMobile ? 1 : 0} />
+              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/10000).toFixed(0)}만`} width={40} />
+              <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 12 }} formatter={v => [`${v.toLocaleString()}원`, '매출']} />
+              <Bar dataKey="매출" fill="#2563eb" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>
+          )}
         </ResponsiveContainer>
       </div>
 
@@ -82,9 +91,10 @@ export default function Dashboard() {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }}>
         <div style={cardStyle}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>고객 TOP 6</div>
-          {topCustomers.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>}
-          {topCustomers.map((c, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < topCustomers.length - 1 ? '1px solid #f8fafc' : 'none' }}>
+          {visibleCustomers.length === 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: isMobile ? 180 : 220, color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>
+          ) : visibleCustomers.map((c, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < visibleCustomers.length - 1 ? '1px solid #f8fafc' : 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 24, height: 24, borderRadius: 6, background: i < 3 ? '#2563eb' : '#e2e8f0', color: i < 3 ? 'white' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{i + 1}</div>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{c.name || c.customer_code}</span>
@@ -100,12 +110,16 @@ export default function Dashboard() {
             <div style={{ fontSize: 11, color: '#94a3b8' }}>최근 7일</div>
           </div>
           <ResponsiveContainer width="100%" height={isMobile ? 180 : 220}>
-            <LineChart data={chartData7}>
-              <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
-              <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} formatter={v => [`${v}건`, '운행건수']} />
-              <Line type="monotone" dataKey="운행건수" stroke="#2563eb" strokeWidth={2.5} dot={{ fill: '#2563eb', r: 3 }} />
-            </LineChart>
+            {has7DayCustomerData ? (
+              <LineChart data={chartData7}>
+                <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
+                <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} formatter={v => [`${v}건`, '운행건수']} />
+                <Line type="monotone" dataKey="운행건수" stroke="#2563eb" strokeWidth={2.5} dot={{ fill: '#2563eb', r: 3 }} />
+              </LineChart>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>
+            )}
           </ResponsiveContainer>
         </div>
       </div>
@@ -114,8 +128,9 @@ export default function Dashboard() {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
         <div style={cardStyle}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>제휴업체 콜 TOP 6</div>
-          {topPartners.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>}
-          {topPartners.map((p, i) => (
+          {topPartners.length === 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: isMobile ? 180 : 220, color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>
+          ) : topPartners.map((p, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < topPartners.length - 1 ? '1px solid #f8fafc' : 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 24, height: 24, borderRadius: 6, background: i < 3 ? '#d97706' : '#e2e8f0', color: i < 3 ? 'white' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{i + 1}</div>
@@ -135,12 +150,16 @@ export default function Dashboard() {
             <div style={{ fontSize: 11, color: '#94a3b8' }}>최근 7일</div>
           </div>
           <ResponsiveContainer width="100%" height={isMobile ? 180 : 220}>
-            <LineChart data={chartData7}>
-              <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
-              <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} formatter={v => [`${v}건`, '제휴콜']} />
-              <Line type="monotone" dataKey="콜수" stroke="#d97706" strokeWidth={2.5} dot={{ fill: '#d97706', r: 3 }} />
-            </LineChart>
+            {has7DayPartnerData ? (
+              <LineChart data={chartData7}>
+                <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
+                <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} formatter={v => [`${v}건`, '제휴콜']} />
+                <Line type="monotone" dataKey="콜수" stroke="#d97706" strokeWidth={2.5} dot={{ fill: '#d97706', r: 3 }} />
+              </LineChart>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#cbd5e1', fontSize: 13 }}>데이터 없음</div>
+            )}
           </ResponsiveContainer>
         </div>
       </div>

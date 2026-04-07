@@ -3,8 +3,22 @@ import { useState, useEffect, useRef } from 'react';
 const KAKAO_REST_KEY = '5bfc2766bfe2836aab70ff613c8c05be';
 
 async function searchKeyword(query, lng, lat) {
-  const params = new URLSearchParams({ query, size: 10 });
-  if (lng && lat) { params.set('x', lng); params.set('y', lat); params.set('sort', 'distance'); }
+  const params = new URLSearchParams({ query, size: 15 });
+  if (lng && lat) {
+    params.set('x', lng);
+    params.set('y', lat);
+    params.set('sort', 'distance');
+    params.set('radius', '20000'); // 20km 반경 우선, 없으면 거리순으로 전체 확장
+  }
+  const res = await fetch(`https://dapi.kakao.com/v2/local/search/keyword.json?${params}`, {
+    headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
+  });
+  return res.json();
+}
+
+async function searchKeywordFallback(query) {
+  // 좌표 없이 일반 검색 (GPS 거부 등의 경우)
+  const params = new URLSearchParams({ query, size: 15 });
   const res = await fetch(`https://dapi.kakao.com/v2/local/search/keyword.json?${params}`, {
     headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
   });
@@ -12,7 +26,7 @@ async function searchKeyword(query, lng, lat) {
 }
 
 async function searchAddress(query) {
-  const params = new URLSearchParams({ query, size: 10 });
+  const params = new URLSearchParams({ query, size: 15 });
   const res = await fetch(`https://dapi.kakao.com/v2/local/search/address.json?${params}`, {
     headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
   });
@@ -26,17 +40,62 @@ async function coord2Address(lng, lat) {
   return res.json();
 }
 
+// 거리 포맷: 1234m → "1.2km", 423m → "423m"
+function formatDistance(meters) {
+  const m = Number(meters);
+  if (!m || isNaN(m)) return '';
+  if (m < 1000) return `${Math.round(m)}m`;
+  return `${(m / 1000).toFixed(1)}km`;
+}
+
+// 입력어와 실제 관련 있는 결과만 통과시키는 필터
+// - 입력어를 공백 기준 토큰화
+// - 최소 1개 토큰은 상호명/주소에 포함되어야 함
+// - 토큰 길이 1글자는 너무 느슨하니 2글자 이상만 검사
+function matchesQuery(item, query) {
+  if (!query) return true;
+  const tokens = query.trim().split(/\s+/).filter(t => t.length >= 2);
+  if (tokens.length === 0) {
+    // 전체 입력이 1글자면 원본 전체 문자열로라도 검사
+    const q = query.trim();
+    if (q.length === 0) return true;
+    return (item.name && item.name.includes(q)) || (item.address && item.address.includes(q));
+  }
+  // 모든 토큰이 이름 또는 주소에 존재해야 함
+  return tokens.every(tok => {
+    return (item.name && item.name.includes(tok)) || (item.address && item.address.includes(tok));
+  });
+}
+
 export default function AddressSearchModal({ onSelect, onClose, title = '주소 검색', currentLat, currentLng }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [tab, setTab] = useState('keyword'); // keyword | address
+
+  // 검색 기준 좌표: GPS로 자동 획득 → 실패 시 props fallback
+  const [searchLat, setSearchLat] = useState(currentLat || null);
+  const [searchLng, setSearchLng] = useState(currentLng || null);
+  const [gpsAcquired, setGpsAcquired] = useState(false);
+
   const inputRef = useRef(null);
   const timerRef = useRef(null);
 
+  // 모달 마운트 시 자동 GPS 1회 (silent)
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 300);
+
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setSearchLat(pos.coords.latitude);
+        setSearchLng(pos.coords.longitude);
+        setGpsAcquired(true);
+      },
+      () => { /* GPS 거부 — fallback 사용 */ },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
+    );
   }, []);
 
   useEffect(() => {
@@ -46,21 +105,37 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
       setLoading(true);
       try {
         if (tab === 'keyword') {
-          const data = await searchKeyword(query, currentLng, currentLat);
-          setResults((data.documents || []).map(d => ({
+          // 거리순 검색 시도 → 결과가 비어있으면 좌표 없이 fallback
+          let data = null;
+          if (searchLat && searchLng) {
+            data = await searchKeyword(query, searchLng, searchLat);
+            // radius 안에 결과가 없으면 좌표 빼고 다시 검색
+            if (!data.documents || data.documents.length === 0) {
+              data = await searchKeywordFallback(query);
+            }
+          } else {
+            data = await searchKeywordFallback(query);
+          }
+          let mapped = (data.documents || []).map(d => ({
             name: d.place_name,
             address: d.road_address_name || d.address_name,
             detail: d.category_group_name || '',
+            distance: d.distance ? formatDistance(d.distance) : '',
             lat: parseFloat(d.y),
             lng: parseFloat(d.x),
             phone: d.phone || '',
-          })));
+          }));
+          // 입력어와 무관한 결과 컷
+          const filtered = mapped.filter(r => matchesQuery(r, query));
+          // 필터 결과가 0건이면 원본 그대로 (사용자가 아무것도 못 보는 상황 방지)
+          setResults(filtered.length > 0 ? filtered : mapped);
         } else {
           const data = await searchAddress(query);
           setResults((data.documents || []).map(d => ({
             name: d.road_address?.address_name || d.address?.address_name || d.address_name,
             address: d.road_address?.address_name || d.address_name,
             detail: d.road_address ? '도로명' : '지번',
+            distance: '',
             lat: parseFloat(d.y),
             lng: parseFloat(d.x),
           })));
@@ -69,7 +144,7 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
       finally { setLoading(false); }
     }, 400);
     return () => clearTimeout(timerRef.current);
-  }, [query, tab]);
+  }, [query, tab, searchLat, searchLng]);
 
   const handleGPS = () => {
     if (!navigator.geolocation) { alert('GPS를 지원하지 않습니다.'); return; }
@@ -89,6 +164,8 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
+
+  const hasLocationContext = !!(searchLat && searchLng);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 300, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
@@ -121,9 +198,9 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
           </div>
 
           {/* 검색 입력 */}
-          <div style={{ position: 'relative', marginBottom: 10 }}>
+          <div style={{ position: 'relative', marginBottom: 6 }}>
             <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
-              placeholder={tab === 'keyword' ? '장소명, 상호명 검색 (예: 양양터미널)' : '도로명 또는 지번 주소 입력'}
+              placeholder={tab === 'keyword' ? '장소명, 상호명 검색 (예: 양우내안애)' : '도로명 또는 지번 주소 입력'}
               style={{ width: '100%', padding: '14px 40px 14px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
             />
             {query && (
@@ -133,6 +210,15 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
               }}>✕</button>
             )}
           </div>
+
+          {/* 위치 기반 정렬 표시 */}
+          {tab === 'keyword' && (
+            <div style={{ fontSize: 11, color: hasLocationContext ? '#16a34a' : '#cbd5e1', marginBottom: 10, paddingLeft: 4 }}>
+              {hasLocationContext
+                ? `📡 현재 위치 기준 가까운 순으로 정렬 ${gpsAcquired ? '(GPS)' : '(출발지 기준)'}`
+                : '⚠️ 위치 정보 없음 — 일반 검색'}
+            </div>
+          )}
         </div>
 
         {/* 결과 목록 */}
@@ -173,7 +259,14 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
                   {tab === 'keyword' ? '📍' : '🏠'}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ flex: 1, fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                    {r.distance && (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#eff6ff', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
+                        {r.distance}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {r.address}
                     {r.detail && <span style={{ marginLeft: 6, color: '#94a3b8' }}>· {r.detail}</span>}

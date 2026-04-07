@@ -1,0 +1,9 @@
+{
+  "name": "drivelog-root",
+  "private": true,
+  "scripts": {
+    "deploy:admin": "cd drivelog-admin/client && npm run deploy",
+    "deploy:mobile": "cd drivelog-mobile && npm run deploy",
+    "deploy:all": "npm run deploy:admin && npm run deploy:mobile"
+  }
+}

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+  "deploy": "vite build && ssh -p 30000 rnfkehdwk@rnfkehdwk.synology.me \"rm -rf /volume1/docker/drivelog/mobile/dist/*\" && scp -O -P 30000 -r dist/* rnfkehdwk@rnfkehdwk.synology.me:/volume1/docker/drivelog/mobile/dist/"
+
   },
   "dependencies": {
     "react": "^18.2.0",
