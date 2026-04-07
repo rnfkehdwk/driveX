@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchDailySettlement } from '../api/client';
+import { exportToExcel, FARE_SETTLEMENT_COLUMNS } from '../utils/excel';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const addDays = (dateStr, delta) => {
@@ -89,7 +90,17 @@ export default function FareSettlement() {
             </span>
           )}
         </div>
-        <button onClick={() => window.print()} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#475569' }}>🖨️ 인쇄</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => {
+              const periodLabel = isRange ? `${startDate}~${endDate}` : startDate;
+              exportToExcel(filteredRides, FARE_SETTLEMENT_COLUMNS, `운임정산_${periodLabel}`);
+            }}
+            disabled={filteredRides.length === 0}
+            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: filteredRides.length > 0 ? '#16a34a' : '#cbd5e1', color: 'white', fontSize: 12, fontWeight: 600, cursor: filteredRides.length > 0 ? 'pointer' : 'default' }}
+          >⬇️ Excel</button>
+          <button onClick={() => window.print()} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#475569' }}>🖨️ 인쇄</button>
+        </div>
       </div>
 
       {/* KPI: 총 매출 + 그룹별 합계 */}
