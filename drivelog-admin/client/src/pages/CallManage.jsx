@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchCalls, createCall, cancelCall, updateCall, fetchCustomers, fetchPartners } from '../api/client';
+import { fetchCalls, createCall, cancelCall, updateCall, fetchCustomers, fetchPartners, fetchPaymentTypes } from '../api/client';
 import AddressSearchModal from '../components/AddressSearchModal';
 import KakaoMiniMap from '../components/KakaoMiniMap';
 
@@ -14,9 +14,10 @@ const TABS = ['ALL', 'WAITING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELL
 const TAB_LABELS = { ALL: '전체', WAITING: '대기', ASSIGNED: '배정', IN_PROGRESS: '운행중', COMPLETED: '완료', CANCELLED: '취소' };
 
 function CreateCallModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ start_address: '', start_detail: '', start_lat: null, start_lng: null, end_address: '', end_detail: '', end_lat: null, end_lng: null, customer_id: '', partner_id: '', estimated_fare: '', payment_method: 'CASH', memo: '' });
+  const [form, setForm] = useState({ start_address: '', start_detail: '', start_lat: null, start_lng: null, end_address: '', end_detail: '', end_lat: null, end_lng: null, customer_id: '', partner_id: '', estimated_fare: '', payment_type_id: '', payment_method: '', memo: '' });
   const [customers, setCustomers] = useState([]);
   const [partners, setPartners] = useState([]);
+  const [paymentTypes, setPaymentTypes] = useState([]);
   const [custSearch, setCustSearch] = useState('');
   const [partSearch, setPartSearch] = useState('');
   const [saving, setSaving] = useState(false);
@@ -25,6 +26,14 @@ function CreateCallModal({ onClose, onCreated }) {
   useEffect(() => {
     fetchCustomers({ limit: 9999 }).then(r => setCustomers(r.data || [])).catch(() => {});
     fetchPartners({ limit: 9999 }).then(r => setPartners(r.data || [])).catch(() => {});
+    fetchPaymentTypes({ active_only: 'true' }).then(r => {
+      const list = r.data || [];
+      setPaymentTypes(list);
+      // 첫 번째 결제구분을 기본값으로
+      if (list.length > 0) {
+        setForm(f => ({ ...f, payment_type_id: list[0].payment_type_id, payment_method: list[0].code }));
+      }
+    }).catch(() => {});
   }, []);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
@@ -42,7 +51,18 @@ function CreateCallModal({ onClose, onCreated }) {
     if (!form.start_address) { alert('출발지를 입력해주세요.'); return; }
     setSaving(true);
     try {
-      const body = { ...form, customer_id: form.customer_id || null, partner_id: form.partner_id || null, estimated_fare: form.estimated_fare ? parseInt(form.estimated_fare) : null, start_lat: form.start_lat, start_lng: form.start_lng, end_lat: form.end_lat, end_lng: form.end_lng };
+      const body = {
+        ...form,
+        customer_id: form.customer_id || null,
+        partner_id: form.partner_id || null,
+        estimated_fare: form.estimated_fare ? parseInt(form.estimated_fare) : null,
+        payment_type_id: form.payment_type_id || null,
+        payment_method: form.payment_method || 'CASH',
+        start_lat: form.start_lat,
+        start_lng: form.start_lng,
+        end_lat: form.end_lat,
+        end_lng: form.end_lng,
+      };
       await createCall(body);
       alert('콜이 생성되었습니다.');
       onCreated();
@@ -107,7 +127,25 @@ function CreateCallModal({ onClose, onCreated }) {
         {/* 요금 / 결제 / 메모 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div><label style={ls}>예상 요금</label><input type="number" value={form.estimated_fare} onChange={set('estimated_fare')} placeholder="0" style={is} /></div>
-          <div><label style={ls}>결제방법</label><select value={form.payment_method} onChange={set('payment_method')} style={{ ...is, background: 'white' }}><option value="CASH">현금</option><option value="CARD">카드</option><option value="TRANSFER">계좌이체</option><option value="KAKAO_PAY">카카오페이</option></select></div>
+          <div>
+            <label style={ls}>결제방법</label>
+            <select
+              value={form.payment_type_id}
+              onChange={(e) => {
+                const id = e.target.value;
+                const pt = paymentTypes.find(p => String(p.payment_type_id) === String(id));
+                setForm(f => ({ ...f, payment_type_id: id, payment_method: pt?.code || '' }));
+              }}
+              style={{ ...is, background: 'white' }}
+            >
+              {paymentTypes.length === 0 && <option value="">결제구분 없음</option>}
+              {paymentTypes.map(pt => (
+                <option key={pt.payment_type_id} value={pt.payment_type_id}>
+                  {pt.label}{pt.settlement_group_name ? ` (${pt.settlement_group_name})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <div style={{ marginBottom: 20 }}>
           <label style={ls}>메모</label>
@@ -160,7 +198,7 @@ function CallCard({ call, onCancel, onRefresh }) {
         {call.customer_name && <span>👤 {call.customer_name}</span>}
         {call.partner_name && <span>🏢 {call.partner_name}</span>}
         {call.assigned_rider_name && <span>🚘 {call.assigned_rider_name}</span>}
-        {call.payment_method && <span>💳 {call.payment_method === 'CASH' ? '현금' : call.payment_method === 'CARD' ? '카드' : call.payment_method === 'TRANSFER' ? '이체' : '카카오'}</span>}
+        {(call.payment_label || call.payment_method) && <span>💳 {call.payment_label || call.payment_method}</span>}
       </div>
 
       {expanded && (

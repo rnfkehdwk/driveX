@@ -10,6 +10,13 @@ export default function MasterDashboard() {
     const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -37,7 +44,7 @@ export default function MasterDashboard() {
       </div>
 
       {/* KPI 카드 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)', gap: isMobile ? 8 : 12, marginBottom: 20 }}>
         {[
           { label: '전체 업체', value: s.totalCompanies, icon: '🏢', color: '#2563eb' },
           { label: '활성 업체', value: s.activeCompanies, icon: '✅', color: '#16a34a' },
@@ -55,7 +62,7 @@ export default function MasterDashboard() {
       </div>
 
       {/* 업체별 매출 TOP 10 + 운행건수 TOP 10 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }}>
         <div style={card}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>💰 업체별 매출 TOP 10 <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 400 }}>({data.month})</span></div>
           {data.topFare.length === 0 ? (
@@ -114,7 +121,7 @@ export default function MasterDashboard() {
       </div>
 
       {/* 만료 임박 업체 + 최근 문의사항 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
         <div style={card}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>⚠️ 라이선스 만료 임박 <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 400 }}>30일 이내</span></div>
           {data.expiringCompanies.length === 0 ? (

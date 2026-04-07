@@ -91,6 +91,15 @@ export const createPaymentType = (body) => api.post('/payment-types', body).then
 export const updatePaymentType = (id, body) => api.put(`/payment-types/${id}`, body).then(r => r.data);
 export const deletePaymentType = (id) => api.delete(`/payment-types/${id}`).then(r => r.data);
 
+// 정산 그룹
+export const fetchSettlementGroups = (params) => api.get('/settlement-groups', { params }).then(r => r.data);
+export const createSettlementGroup = (body) => api.post('/settlement-groups', body).then(r => r.data);
+export const updateSettlementGroup = (id, body) => api.put(`/settlement-groups/${id}`, body).then(r => r.data);
+export const deleteSettlementGroup = (id) => api.delete(`/settlement-groups/${id}`).then(r => r.data);
+
+// 일일 운임 정산
+export const fetchDailySettlement = (params) => api.get('/settlements/daily', { params }).then(r => r.data);
+
 export const fetchPermissions = () => api.get('/permissions').then(r => r.data);
 export const bulkUpdatePermissions = (body) => api.put('/permissions/bulk/update', body).then(r => r.data);
 export const fetchCompanyPermissions = (companyId) => api.get(`/permissions/company/${companyId}`).then(r => r.data);

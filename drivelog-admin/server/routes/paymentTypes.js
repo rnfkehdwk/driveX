@@ -20,10 +20,11 @@ router.get('/', authenticate, async (req, res) => {
     if (activeOnly) where += ' AND pt.is_active = TRUE';
 
     const [rows] = await pool.execute(
-      `SELECT pt.payment_type_id, pt.company_id, pt.code, pt.label, pt.sort_order, pt.is_active, pt.created_at,
-              c.company_name
+      `SELECT pt.payment_type_id, pt.company_id, pt.code, pt.label, pt.sort_order, pt.is_active, pt.settlement_group_id, pt.created_at,
+              c.company_name, sg.name AS settlement_group_name, sg.color AS settlement_group_color
        FROM payment_types pt
        LEFT JOIN companies c ON pt.company_id = c.company_id
+       LEFT JOIN settlement_groups sg ON pt.settlement_group_id = sg.group_id
        ${where} ORDER BY pt.company_id, pt.sort_order`,
       params
     );
@@ -37,15 +38,15 @@ router.get('/', authenticate, async (req, res) => {
 // POST /api/payment-types - 결제구분 등록
 router.post('/', authenticate, authorize('SUPER_ADMIN', 'MASTER'), async (req, res) => {
   try {
-    const { code, label, sort_order, company_id } = req.body;
+    const { code, label, sort_order, company_id, settlement_group_id } = req.body;
     if (!code || !label) return res.status(400).json({ error: '코드와 표시명은 필수입니다.' });
 
     const targetCompanyId = req.user.role === 'MASTER' ? company_id : req.user.company_id;
     if (!targetCompanyId) return res.status(400).json({ error: '소속 업체를 선택해주세요.' });
 
     const [result] = await pool.execute(
-      `INSERT INTO payment_types (company_id, code, label, sort_order) VALUES (?, ?, ?, ?)`,
-      [targetCompanyId, code.toUpperCase(), label, sort_order || 0]
+      `INSERT INTO payment_types (company_id, code, label, sort_order, settlement_group_id) VALUES (?, ?, ?, ?, ?)`,
+      [targetCompanyId, code.toUpperCase(), label, sort_order || 0, settlement_group_id || null]
     );
     res.status(201).json({ payment_type_id: result.insertId, message: '결제구분이 등록되었습니다.' });
   } catch (err) {
@@ -58,7 +59,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'MASTER'), async (req, r
 // PUT /api/payment-types/:id - 결제구분 수정
 router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'MASTER'), async (req, res) => {
   try {
-    const allowed = ['label', 'sort_order', 'is_active'];
+    const allowed = ['label', 'sort_order', 'is_active', 'settlement_group_id'];
     const updates = [], values = [];
     for (const key of allowed) {
       if (req.body[key] !== undefined) { updates.push(`${key} = ?`); values.push(req.body[key]); }

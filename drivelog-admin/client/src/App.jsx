@@ -21,6 +21,7 @@ import Inquiries from './pages/Inquiries';
 import MyInquiries from './pages/MyInquiries';
 import CallManage from './pages/CallManage';
 import Reports from './pages/Reports';
+import FareSettlement from './pages/FareSettlement';
 import { logout as apiLogout, createInquiry, changePassword, getMe } from './api/client';
 
 const ADMIN_VERSION = __BUILD_TIME__ || 'dev';
@@ -34,7 +35,7 @@ const masterNavGroups = [
 const superAdminNavGroups = [
   { title: '대시보드', items: [{ path: '/', label: '대시보드', icon: '📊' }, { path: '/reports', label: '월간리포트', icon: '📈' }]},
   { title: '운행', items: [{ path: '/calls', label: '콜 관리', icon: '📞' }, { path: '/rides', label: '운행일지', icon: '🚗' }, { path: '/partners', label: '제휴업체 콜', icon: '🏢' }, { path: '/mileage', label: '마일리지', icon: '⭐' }]},
-  { title: '정산', items: [{ path: '/settlements', label: '정산관리', icon: '💰' }, { path: '/fare-policies', label: '요금설정', icon: '💵' }, { path: '/billing', label: '사용료', icon: '🧾' }]},
+  { title: '정산', items: [{ path: '/settlements', label: '정산관리', icon: '💰' }, { path: '/fare-settlement', label: '운임 정산', icon: '💵' }, { path: '/fare-policies', label: '요금설정', icon: '💵' }, { path: '/billing', label: '사용료', icon: '🧾' }]},
   { title: '관리', items: [{ path: '/users', label: '기사관리', icon: '🚘' }, { path: '/customers', label: '고객관리', icon: '👤' }, { path: '/partner-manage', label: '제휴업체관리', icon: '🤝' }, { path: '/payment-types', label: '결제구분', icon: '💳' }, { path: '/my-inquiries', label: '문의하기', icon: '📩' }]},
 ];
 
@@ -98,6 +99,7 @@ export default function App() {
   const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [apiVersion, setApiVersion] = useState('');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showExpiredPopup, setShowExpiredPopup] = useState(false);
   const [showRiderExceededPopup, setShowRiderExceededPopup] = useState(false);
   const [showInquiryModal, setShowInquiryModal] = useState(false);
@@ -115,6 +117,12 @@ export default function App() {
       else setShowRiderExceededPopup(false);
     } catch {}
   };
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -153,8 +161,9 @@ export default function App() {
           {user.is_trial && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: '#fef3c7', color: '#92400e' }}>체험</span>}
           {user.license_expired && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }} onClick={() => setShowExpiredPopup(true)}>만료</span>}
           {isRiderExceeded && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: '#fffbeb', color: '#d97706', cursor: 'pointer' }} onClick={() => setShowRiderExceededPopup(true)}>👥 초과</span>}
-          <div style={{ flex: 1, textAlign: 'center', fontSize: 15, fontWeight: 700, color: '#475569' }}>{currentLabel}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}><div style={{ fontSize: 11, color: '#64748b', textAlign: 'right' }}><div style={{ fontWeight: 700, color: '#1e293b' }}>{isMaster ? 'DriveLog' : user.company_name || 'DriveLog'}</div><div>{user.name}</div><div style={{ fontSize: 9, color: '#b0b8c4', fontFamily: 'monospace', marginTop: 1 }}>A:{ADMIN_VERSION} API:{apiVersion}</div></div></div>
+          <div style={{ flex: 1, textAlign: 'center', fontSize: isMobile ? 13 : 15, fontWeight: 700, color: '#475569' }}>{currentLabel}</div>
+          {!isMobile && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}><div style={{ fontSize: 11, color: '#64748b', textAlign: 'right' }}><div style={{ fontWeight: 700, color: '#1e293b' }}>{isMaster ? 'DriveLog' : user.company_name || 'DriveLog'}</div><div>{user.name}</div><div style={{ fontSize: 9, color: '#b0b8c4', fontFamily: 'monospace', marginTop: 1 }}>A:{ADMIN_VERSION} API:{apiVersion}</div></div></div>}
+          {isMobile && <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', flexShrink: 0 }}>{user.name}</div>}
         </header>
         {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100 }} />}
         <div style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 280, background: 'white', zIndex: 101, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.25s ease-in-out', display: 'flex', flexDirection: 'column', boxShadow: sidebarOpen ? '4px 0 24px rgba(0,0,0,0.1)' : 'none' }}>
@@ -201,6 +210,7 @@ export default function App() {
           <Route path="/partner-manage" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <PartnerManage />}</RoleGuard>} />
           <Route path="/payment-types" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <PaymentTypes />}</RoleGuard>} />
           <Route path="/settlements" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Settlements />}</RoleGuard>} />
+          <Route path="/fare-settlement" element={<RoleGuard user={user} roles={['SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <FareSettlement />}</RoleGuard>} />
           <Route path="/fare-policies" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <FarePolicies />}</RoleGuard>} />
           <Route path="/billing" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}><Billing user={user} /></RoleGuard>} />
           <Route path="/my-inquiries" element={<RoleGuard user={user} roles={['SUPER_ADMIN']}><MyInquiries /></RoleGuard>} />

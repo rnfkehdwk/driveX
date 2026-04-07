@@ -13,6 +13,7 @@ const usersRoutes = require('./routes/users');
 const customersRoutes = require('./routes/customers');
 const partnersRoutes = require('./routes/partners');
 const settlementsRoutes = require('./routes/settlements');
+const settlementGroupsRoutes = require('./routes/settlementGroups');
 const farePoliciesRoutes = require('./routes/farePolices');
 const billingRoutes = require('./routes/billing');
 const billingPlansRoutes = require('./routes/billingPlans');
@@ -47,6 +48,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/customers', customersRoutes);
 app.use('/api/partners', partnersRoutes);
 app.use('/api/settlements', settlementsRoutes);
+app.use('/api/settlement-groups', settlementGroupsRoutes);
 app.use('/api/fare-policies', farePoliciesRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/billing-plans', billingPlansRoutes);
@@ -59,7 +61,7 @@ app.use('/api/inquiries', inquiriesRoutes);
 app.use('/api/calls', callsRoutes);
 app.use('/api/audit-logs', auditLogsRoutes);
 
-app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '2.3', timestamp: new Date().toISOString() }); });
+app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '2.4', timestamp: new Date().toISOString() }); });
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
@@ -68,6 +70,6 @@ app.use((err, req, res, next) => { console.error('Unhandled error:', err); res.s
 
 async function start() {
   await testConnection();
-  app.listen(PORT, () => { console.log(`DriveLog Admin Server v2.3 running on http://localhost:${PORT}`); });
+  app.listen(PORT, () => { console.log(`DriveLog Admin Server v2.4 running on http://localhost:${PORT}`); });
 }
 start();

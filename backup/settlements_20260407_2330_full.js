@@ -8,18 +8,7 @@ router.get('/', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, re
   try {
     const { month, rider_id, status } = req.query;
     const companyId = req.user.role === 'MASTER' ? req.query.company_id : req.user.company_id;
-
-    // MASTER가 company_id를 명시하지 않으면 전체 조회, SUPER_ADMIN은 본인 회사만
-    let where, params;
-    if (companyId) {
-      where = 'WHERE s.company_id = ?';
-      params = [companyId];
-    } else {
-      // MASTER + company_id 미지정 → 전체 조회
-      where = 'WHERE 1=1';
-      params = [];
-    }
-
+    let where = 'WHERE s.company_id = ?'; const params = [companyId];
     if (month) { where += ' AND DATE_FORMAT(s.period_start, "%Y-%m") <= ? AND DATE_FORMAT(s.period_end, "%Y-%m") >= ?'; params.push(month, month); }
     if (rider_id) { where += ' AND s.rider_id = ?'; params.push(rider_id); }
     if (status) { where += ' AND s.status = ?'; params.push(status); }
@@ -95,32 +84,22 @@ router.put('/:id/pay', authenticate, authorize('SUPER_ADMIN', 'MASTER'), async (
   catch (err) { res.status(500).json({ error: '지급 처리에 실패했습니다.' }); }
 });
 
-// GET /api/settlements/daily - 일일 또는 기간 운임 정산 리포트
-// 파라미터:
-//   - date: 단일 날짜 (하위호환)
-//   - start_date, end_date: 기간 (권장)
-//   - 같은 날짜면 자동으로 하루만 조회
+// GET /api/settlements/daily - 일일 운임 정산 리포트
 router.get('/daily', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, res) => {
   try {
-    const { date, start_date, end_date } = req.query;
-    const today = new Date().toISOString().slice(0, 10);
-    // start/end 결정: start_date+end_date 우선, 없으면 date, 둘 다 없으면 오늘
-    const startDate = start_date || date || today;
-    const endDate = end_date || date || today;
-    if (startDate > endDate) {
-      return res.status(400).json({ error: '시작일이 종료일보다 늦을 수 없습니다.' });
-    }
+    const { date } = req.query;
+    const targetDate = date || new Date().toISOString().slice(0, 10);
     const companyId = req.user.role === 'MASTER' ? req.query.company_id : req.user.company_id;
     if (!companyId) return res.status(400).json({ error: '업체를 선택하세요.' });
 
-    // 1. 해당 기간의 완료된 운행 내역 (취소 제외)
+    // 1. 해당 날짜의 완료된 운행 내역 (취소 제외)
     const [rides] = await pool.execute(
-      `SELECT r.ride_id, DATE_FORMAT(r.started_at, '%Y-%m-%d') AS ride_date, DATE_FORMAT(r.started_at, '%H:%i') AS ride_time, r.total_fare, r.cash_amount, r.mileage_used,
-              r.start_address, r.end_address,
+      `SELECT r.ride_id, DATE_FORMAT(r.started_at, '%H:%i') AS ride_time, r.total_fare, r.cash_amount, r.mileage_used,
+              r.payment_method, r.start_address, r.end_address,
               cust.name AS customer_name, cust.customer_code,
               rider.name AS rider_name, r.rider_id,
               partner.name AS partner_name,
-              pt.payment_type_id, pt.code AS payment_code, pt.label AS payment_label, pt.settlement_group_id,
+              pt.payment_type_id, pt.label AS payment_label, pt.settlement_group_id,
               sg.name AS group_name, sg.color AS group_color
        FROM rides r
        LEFT JOIN customers cust ON r.customer_id = cust.customer_id
@@ -128,9 +107,9 @@ router.get('/daily', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (re
        LEFT JOIN partner_companies partner ON r.partner_id = partner.partner_id
        LEFT JOIN payment_types pt ON pt.payment_type_id = r.payment_type_id
        LEFT JOIN settlement_groups sg ON pt.settlement_group_id = sg.group_id
-       WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE(r.started_at) BETWEEN ? AND ?
+       WHERE r.company_id = ? AND r.status != 'CANCELLED' AND DATE(r.started_at) = ?
        ORDER BY r.started_at DESC`,
-      [companyId, startDate, endDate]
+      [companyId, targetDate]
     );
 
     // 2. 정산 그룹 목록 (설정되지 않은 결제구분도 '미분류'로 표시)
@@ -139,14 +118,14 @@ router.get('/daily', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (re
       [companyId]
     );
 
-    // 3. 결제방법별 집계 (payment_type_id 기준)
+    // 3. 결제방법별 집계
     const byPayment = {};
     rides.forEach(r => {
-      const key = r.payment_type_id || 'unclassified';
+      const key = r.payment_method || 'UNKNOWN';
       if (!byPayment[key]) {
         byPayment[key] = {
-          code: r.payment_code || null,
-          label: r.payment_label || '미분류',
+          code: key,
+          label: r.payment_label || r.payment_method || '미분류',
           group_id: r.settlement_group_id,
           group_name: r.group_name || '미분류',
           group_color: r.group_color || '#94a3b8',
@@ -195,10 +174,7 @@ router.get('/daily', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (re
     const totalFare = rides.reduce((sum, r) => sum + Number(r.total_fare || 0), 0);
 
     res.json({
-      date: startDate === endDate ? startDate : null,
-      start_date: startDate,
-      end_date: endDate,
-      is_range: startDate !== endDate,
+      date: targetDate,
       total: { fare: totalFare, count: rides.length },
       groups: Object.values(byGroup).filter(g => g.count > 0 || g.group_id !== null),
       payments: Object.values(byPayment),

@@ -84,7 +84,7 @@ const defaultForm = {
   customer_id: null, customer_name: '', customer_phone: '',
   partner_id: null, partner_name: '',
   user_type: '',
-  total_fare: '', payment_method: 'CASH', rider_memo: '',
+  total_fare: '', payment_method: 'CASH', payment_type_id: null, rider_memo: '',
   _call_id: null,
 };
 
@@ -127,7 +127,16 @@ export default function RideNew({ user }) {
   useEffect(() => {
     fetchRiders().then(r => setRiders(r.data || [])).catch(() => {});
     fetchPartners({ active_only: 'true' }).then(r => setPartnerList(r.data || [])).catch(() => {});
-    fetchPaymentTypes({ active_only: 'true' }).then(r => setPaymentTypes(r.data || [])).catch(() => {});
+    fetchPaymentTypes({ active_only: 'true' }).then(r => {
+      const list = r.data || [];
+      setPaymentTypes(list);
+      // 결제구분 로드 후 현재 form.payment_method에 맞는 payment_type_id 자동 설정
+      setForm(f => {
+        if (f.payment_type_id) return f; // 이미 설정되어 있으면 유지
+        const matched = list.find(pt => pt.code === f.payment_method);
+        return matched ? { ...f, payment_type_id: matched.payment_type_id } : f;
+      });
+    }).catch(() => {});
   }, []);
   useEffect(() => { if (userModal && userTab === 'customer') { fetchCustomers({ q: userSearch || undefined }).then(r => setCustomerList(r.data || [])).catch(() => {}); } }, [userModal, userSearch, userTab]);
 
@@ -271,7 +280,10 @@ export default function RideNew({ user }) {
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>결제 방법</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-              {paymentButtons.map(p => (<button key={p.value} onClick={() => up('payment_method')(p.value)} style={{ padding: '11px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: form.payment_method === p.value ? '2px solid #1a1a2e' : '1.5px solid #e5e7eb', background: form.payment_method === p.value ? 'linear-gradient(135deg, #1a1a2e, #16213e)' : '#f8f9fb', color: form.payment_method === p.value ? 'white' : '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</button>))}
+              {paymentButtons.map(p => (<button key={p.value} onClick={() => {
+                const matched = paymentTypes.find(pt => pt.code === p.value);
+                setForm(f => ({ ...f, payment_method: p.value, payment_type_id: matched?.payment_type_id || null }));
+              }} style={{ padding: '11px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: form.payment_method === p.value ? '2px solid #1a1a2e' : '1.5px solid #e5e7eb', background: form.payment_method === p.value ? 'linear-gradient(135deg, #1a1a2e, #16213e)' : '#f8f9fb', color: form.payment_method === p.value ? 'white' : '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</button>))}
             </div>
           </div>
 

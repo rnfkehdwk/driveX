@@ -79,7 +79,7 @@ export default function Customers() {
       </div>
 
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #f1f5f9', overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 800 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
               {headers.map((h, i) => (
