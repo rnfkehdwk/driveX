@@ -53,21 +53,56 @@ function matchesQuery(item, query) {
   });
 }
 
+// 이전에 성공한 검색 좌표를 sessionStorage에 캐시 (다음 모달 열 때 fallback)
+const LAST_COORD_KEY = 'addrSearchLastCoord';
+function loadLastCoord() {
+  try {
+    const raw = sessionStorage.getItem(LAST_COORD_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (typeof obj.lat === 'number' && typeof obj.lng === 'number') return obj;
+  } catch {}
+  return null;
+}
+function saveLastCoord(lat, lng) {
+  try { sessionStorage.setItem(LAST_COORD_KEY, JSON.stringify({ lat, lng, t: Date.now() })); } catch {}
+}
+
+// 회사 좌표를 localStorage의 user 객체에서 읽음 (로그인 시 저장됨)
+function loadCompanyCoord() {
+  try {
+    const raw = localStorage.getItem('user');
+    if (!raw) return null;
+    const u = JSON.parse(raw);
+    if (u.company_lat && u.company_lng) {
+      return { lat: parseFloat(u.company_lat), lng: parseFloat(u.company_lng) };
+    }
+  } catch {}
+  return null;
+}
+
 export default function AddressSearchModal({ onSelect, onClose, title = '주소 검색', currentLat, currentLng }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('keyword');
 
-  // 검색 기준 좌표: GPS 자동 → props fallback
-  const [searchLat, setSearchLat] = useState(currentLat || null);
-  const [searchLng, setSearchLng] = useState(currentLng || null);
-  const [gpsAcquired, setGpsAcquired] = useState(false);
+  // 검색 기준 좌표 우선순위: GPS 자동 → props → sessionStorage 캐시 → 회사 좌표 (localStorage)
+  const cached = loadLastCoord();
+  const companyCoord = loadCompanyCoord();
+  const initialLat = currentLat || cached?.lat || companyCoord?.lat || null;
+  const initialLng = currentLng || cached?.lng || companyCoord?.lng || null;
+  const [searchLat, setSearchLat] = useState(initialLat);
+  const [searchLng, setSearchLng] = useState(initialLng);
+  const [coordSource, setCoordSource] = useState(
+    currentLat ? 'props' : (cached ? 'cache' : (companyCoord ? 'company' : 'none'))
+  );
 
   const inputRef = useRef(null);
   const timerRef = useRef(null);
 
   // 모달 마운트 시 자동 GPS 1회 (silent)
+  // 성공 시 최우선 기준으로 사용
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 300);
 
@@ -76,9 +111,11 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
       (pos) => {
         setSearchLat(pos.coords.latitude);
         setSearchLng(pos.coords.longitude);
-        setGpsAcquired(true);
+        setCoordSource('gps');
+        // GPS 좌표도 캐시에 저장 (다음 세션에서 재사용)
+        saveLastCoord(pos.coords.latitude, pos.coords.longitude);
       },
-      () => { /* GPS 거부 — props fallback 또는 일반 검색 */ },
+      () => { /* GPS 거부 — props 또는 캐시 fallback 사용 */ },
       { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
     );
   }, []);
@@ -147,8 +184,8 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
           {tab === 'keyword' && (
             <div style={{ fontSize: 11, color: hasLocationContext ? '#16a34a' : '#cbd5e1', marginBottom: 10, paddingLeft: 4 }}>
               {hasLocationContext
-                ? `📡 현재 위치 기준 가까운 순으로 정렬 ${gpsAcquired ? '(GPS)' : '(주변 좌표 기준)'}`
-                : '⚠️ 위치 정보 없음 — 일반 검색'}
+                ? `📡 가까운 순으로 정렬 (${coordSource === 'gps' ? 'GPS' : coordSource === 'props' ? '출발지' : coordSource === 'company' ? '회사 위치' : '이전 검색 위치'})`
+                : '⚠️ 위치 정보 없음 — 지명 + 장소명으로 검색하세요 (예: "양양 양우내안애")'}
             </div>
           )}
         </div>
@@ -157,7 +194,10 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
           {!loading && results.length === 0 && query && <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8' }}><div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div><div style={{ fontSize: 13 }}>검색 결과가 없습니다</div></div>}
           {!loading && results.length === 0 && !query && <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8' }}><div style={{ fontSize: 28, marginBottom: 8 }}>📍</div><div style={{ fontSize: 13 }}>검색어를 입력하세요</div></div>}
           {results.map((r, i) => (
-            <div key={i} onClick={() => onSelect(r)} style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 6, border: '1px solid #f1f5f9', cursor: 'pointer' }}>
+            <div key={i} onClick={() => {
+              if (r.lat && r.lng) saveLastCoord(r.lat, r.lng);
+              onSelect(r);
+            }} style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 6, border: '1px solid #f1f5f9', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>📍</div>
                 <div style={{ flex: 1, minWidth: 0 }}>

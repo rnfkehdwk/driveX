@@ -29,7 +29,7 @@ router.post('/login', async (req, res) => {
   const { company_code, login_id, password } = req.body;
   if (!login_id || !password) return res.status(400).json({ error: '로그인 ID와 비밀번호를 입력하세요.' });
   try {
-    let sql = `SELECT u.*, c.company_code, c.company_name, c.status AS company_status, c.trial_expires_at, c.license_expires, c.license_type, c.plan_id, p.plan_name FROM users u LEFT JOIN companies c ON u.company_id = c.company_id LEFT JOIN billing_plans p ON c.plan_id = p.plan_id WHERE u.login_id = ?`;
+    let sql = `SELECT u.*, c.company_code, c.company_name, c.lat AS company_lat, c.lng AS company_lng, c.status AS company_status, c.trial_expires_at, c.license_expires, c.license_type, c.plan_id, p.plan_name FROM users u LEFT JOIN companies c ON u.company_id = c.company_id LEFT JOIN billing_plans p ON c.plan_id = p.plan_id WHERE u.login_id = ?`;
     const params = [login_id];
     if (company_code) { sql += ` AND (c.company_code = ? OR u.role = 'MASTER')`; params.push(company_code); }
     const [rows] = await pool.execute(sql, params);
@@ -82,6 +82,8 @@ router.post('/login', async (req, res) => {
       user_id: user.user_id, company_id: user.company_id, company_code: user.company_code,
       company_name: user.company_name, role: user.role, name: user.name, phone: user.phone,
       vehicle_number: user.vehicle_number,
+      company_lat: user.company_lat ? parseFloat(user.company_lat) : null,
+      company_lng: user.company_lng ? parseFloat(user.company_lng) : null,
       license_expires: licenseExpiresDate, license_expired: licenseExpired,
       license_type: user.license_type, plan_id: user.plan_id, plan_name: user.plan_name,
       rider_exceeded: riderExceeded, rider_current: riderCurrent, rider_max: riderMax,
@@ -111,9 +113,12 @@ router.post('/refresh', async (req, res) => {
 router.get('/me', authenticate, async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT u.user_id, u.company_id, u.role, u.name, u.phone, u.email, u.vehicle_number, u.vehicle_type, u.profile_image, c.company_code, c.company_name, c.status AS company_status, c.trial_expires_at, c.license_expires, c.license_type, c.plan_id, p.plan_name FROM users u LEFT JOIN companies c ON u.company_id = c.company_id LEFT JOIN billing_plans p ON c.plan_id = p.plan_id WHERE u.user_id = ?`, [req.user.user_id]);
+      `SELECT u.user_id, u.company_id, u.role, u.name, u.phone, u.email, u.vehicle_number, u.vehicle_type, u.profile_image, c.company_code, c.company_name, c.lat AS company_lat, c.lng AS company_lng, c.status AS company_status, c.trial_expires_at, c.license_expires, c.license_type, c.plan_id, p.plan_name FROM users u LEFT JOIN companies c ON u.company_id = c.company_id LEFT JOIN billing_plans p ON c.plan_id = p.plan_id WHERE u.user_id = ?`, [req.user.user_id]);
     if (rows.length === 0) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
     const r = rows[0];
+    // 좌표 타입 정렬
+    if (r.company_lat) r.company_lat = parseFloat(r.company_lat);
+    if (r.company_lng) r.company_lng = parseFloat(r.company_lng);
 
     // 만료 체크
     const now = new Date(); now.setHours(0,0,0,0);

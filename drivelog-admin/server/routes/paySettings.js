@@ -115,24 +115,62 @@ router.get('/attendance', authenticate, authorize('SUPER_ADMIN', 'MASTER'), asyn
   } catch (err) { res.status(500).json({ error: '출퇴근 기록 조회 실패' }); }
 });
 
-// POST /api/pay-settings/attendance - 출퇴근 기록 등록
+// POST /api/pay-settings/attendance - 출퇴근 기록 등록 (두 가지 모드 지원)
+//   모드 A: clock_in + clock_out 입력 → 자동 계산 (기존 방식)
+//   모드 B: calculated_hours 직접 입력 → 0.5h 단위 근무시간 직접 입력
 router.post('/attendance', authenticate, authorize('SUPER_ADMIN', 'MASTER'), async (req, res) => {
   try {
     const companyId = req.user.role === 'MASTER' ? (req.body.company_id || req.user.company_id) : req.user.company_id;
-    const { rider_id, work_date, clock_in, clock_out, memo } = req.body;
+    const { rider_id, work_date, clock_in, clock_out, calculated_hours: directHours, memo } = req.body;
 
-    if (!rider_id || !work_date || !clock_in) {
-      return res.status(400).json({ error: '기사, 근무일, 출근시간은 필수입니다.' });
+    if (!rider_id || !work_date) {
+      return res.status(400).json({ error: '기사와 근무일은 필수입니다.' });
     }
 
-    // 근무시간 계산
+    // 모드 B: 단순 등록 (calculated_hours 직접 입력)
+    if (directHours != null && !clock_in) {
+      const hours = Number(directHours);
+      if (isNaN(hours) || hours < 0 || hours > 24) {
+        return res.status(400).json({ error: '근무시간은 0–24시간 사이의 숫자여야 합니다.' });
+      }
+      const workMinutes = Math.round(hours * 60);
+
+      // clock_in/out이 NOT NULL일 수 있어 work_date 기준 dummy 값으로 채움
+      // (조회 시 이 값은 무시하고 calculated_hours만 사용)
+      const dummyClockIn = `${work_date} 00:00:00`;
+      const dummyClockOut = `${work_date} ${String(Math.floor(hours)).padStart(2, '0')}:${hours % 1 === 0.5 ? '30' : '00'}:00`;
+
+      // 중복 체크: 같은 기사 × 같은 날짜면 UPDATE
+      const [existing] = await pool.execute(
+        'SELECT id FROM rider_attendance WHERE company_id = ? AND rider_id = ? AND work_date = ? LIMIT 1',
+        [companyId, rider_id, work_date]
+      );
+      if (existing.length > 0) {
+        await pool.execute(
+          'UPDATE rider_attendance SET clock_in = ?, clock_out = ?, work_minutes = ?, calculated_hours = ?, memo = ? WHERE id = ?',
+          [dummyClockIn, dummyClockOut, workMinutes, hours, memo || null, existing[0].id]
+        );
+        return res.json({ id: existing[0].id, work_minutes: workMinutes, calculated_hours: hours, message: '근무시간이 수정되었습니다.', updated: true });
+      }
+
+      const [result] = await pool.execute(
+        'INSERT INTO rider_attendance (company_id, rider_id, work_date, clock_in, clock_out, work_minutes, calculated_hours, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [companyId, rider_id, work_date, dummyClockIn, dummyClockOut, workMinutes, hours, memo || null]
+      );
+      return res.status(201).json({ id: result.insertId, work_minutes: workMinutes, calculated_hours: hours, message: '근무시간이 등록되었습니다.' });
+    }
+
+    // 모드 A: clock_in/clock_out 입력 (기존 방식)
+    if (!clock_in) {
+      return res.status(400).json({ error: '출근시간 또는 근무시간을 입력해주세요.' });
+    }
+
     let workMinutes = null;
     let calculatedHours = null;
     if (clock_out) {
       workMinutes = Math.round((new Date(clock_out) - new Date(clock_in)) / 60000);
       if (workMinutes < 0) workMinutes = 0;
 
-      // 1시간 미만 처리 정책 조회
       const [settings] = await pool.execute('SELECT min_work_policy FROM company_pay_settings WHERE company_id = ?', [companyId]);
       const policy = settings[0]?.min_work_policy || 'ROUND_DOWN';
 

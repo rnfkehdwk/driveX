@@ -99,6 +99,21 @@ export const deleteSettlementGroup = (id) => api.delete(`/settlement-groups/${id
 
 // 일일 운임 정산
 export const fetchDailySettlement = (params) => api.get('/settlements/daily', { params }).then(r => r.data);
+// 월별 기사 정산 내역서
+export const fetchMonthlyPayout = (params) => api.get('/settlements/monthly-payout', { params }).then(r => r.data);
+
+// 근무시간 (rider_attendance) — 양양대리 같은 시급제 업체용
+export const fetchAttendance = (params) => api.get('/pay-settings/attendance', { params }).then(r => r.data);
+export const createAttendance = (body) => api.post('/pay-settings/attendance', body).then(r => r.data);
+export const updateAttendance = (id, body) => api.put(`/pay-settings/attendance/${id}`, body).then(r => r.data);
+export const deleteAttendance = (id) => api.delete(`/pay-settings/attendance/${id}`).then(r => r.data);
+
+// 마일리지 시스템 (customer_mileage 기반)
+export const fetchMileageList = (params) => api.get('/mileage', { params }).then(r => r.data);
+export const fetchMileageSummary = (params) => api.get('/mileage/summary', { params }).then(r => r.data);
+export const fetchCustomerMileage = (id) => api.get(`/mileage/customer/${id}`).then(r => r.data);
+export const adjustMileage = (body) => api.post('/mileage/adjust', body).then(r => r.data);
+export const fetchMileageTransactions = (params) => api.get('/mileage/transactions', { params }).then(r => r.data);
 
 export const fetchPermissions = () => api.get('/permissions').then(r => r.data);
 export const bulkUpdatePermissions = (body) => api.put('/permissions/bulk/update', body).then(r => r.data);
@@ -126,6 +141,7 @@ export const fetchMasterDashboard = (params) => api.get('/stats/master-dashboard
 // 콜 관리
 export const fetchCalls = (params) => api.get('/calls', { params }).then(r => r.data);
 export const fetchCallWaitingCount = () => api.get('/calls/waiting-count').then(r => r.data);
+export const fetchFrequentAddresses = (params) => api.get('/calls/frequent-addresses', { params }).then(r => r.data);
 export const createCall = (body) => api.post('/calls', body).then(r => r.data);
 export const updateCall = (id, body) => api.put(`/calls/${id}`, body).then(r => r.data);
 export const acceptCall = (id) => api.put(`/calls/${id}/accept`).then(r => r.data);

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { createRide, fetchRiders, fetchCustomers, fetchPartners, fetchPaymentTypes, completeCall } from '../api/client';
 import AddressSearchModal from '../components/AddressSearchModal';
 import KakaoMiniMap from '../components/KakaoMiniMap';
+import MileageUseSelect from '../components/MileageUseSelect';
 
 const KAKAO_REST_KEY = '5bfc2766bfe2836aab70ff613c8c05be';
 const DRAFT_KEY = 'rideDraft';
@@ -84,7 +85,7 @@ const defaultForm = {
   customer_id: null, customer_name: '', customer_phone: '',
   partner_id: null, partner_name: '',
   user_type: '',
-  total_fare: '', payment_method: 'CASH', payment_type_id: null, rider_memo: '',
+  total_fare: '', mileage_used: 0, payment_method: 'CASH', payment_type_id: null, rider_memo: '',
   _call_id: null,
 };
 
@@ -112,7 +113,7 @@ export default function RideNew({ user }) {
 
   const [form, setForm] = useState(() => {
     if (fromCall) {
-      return { ...defaultForm, start_address: fromCall.start_address || '', start_detail: fromCall.start_detail || '', end_address: fromCall.end_address || '', end_detail: fromCall.end_detail || '', customer_id: fromCall.customer_id || null, customer_name: fromCall.customer_name || '', customer_phone: fromCall.customer_phone || '', partner_id: fromCall.partner_id || null, partner_name: fromCall.partner_name || '', user_type: fromCall.partner_id ? 'partner' : fromCall.customer_id ? 'customer' : '', total_fare: fromCall.estimated_fare ? String(fromCall.estimated_fare) : '', payment_method: fromCall.payment_method || 'CASH', rider_memo: fromCall.memo ? `[콜 #${fromCall.call_id}] ${fromCall.memo}` : `[콜 #${fromCall.call_id}]`, _call_id: fromCall.call_id };
+      return { ...defaultForm, start_address: fromCall.start_address || '', start_detail: fromCall.start_detail || '', end_address: fromCall.end_address || '', end_detail: fromCall.end_detail || '', customer_id: fromCall.customer_id || null, customer_name: fromCall.customer_name || '', customer_phone: fromCall.customer_phone || '', partner_id: fromCall.partner_id || null, partner_name: fromCall.partner_name || '', user_type: fromCall.partner_id ? 'partner' : fromCall.customer_id ? 'customer' : '', total_fare: fromCall.estimated_fare ? String(fromCall.estimated_fare) : '', payment_method: fromCall.payment_method || 'CASH', rider_memo: fromCall.memo ? `[콜 #${fromCall.call_id}] ${fromCall.memo}` : `[콜 #${fromCall.call_id}]`, mileage_used: 0, _call_id: fromCall.call_id };
     }
     const draft = loadDraft();
     if (draft && draft.started_at) { const { _savedAt, ...rest } = draft; return { ...defaultForm, ...rest }; }
@@ -174,7 +175,7 @@ export default function RideNew({ user }) {
     if (!form.started_at) { alert('출발 버튼을 먼저 눌러주세요.'); return; }
     setSaving(true);
     try {
-      const body = { ...form, total_fare: form.total_fare ? parseInt(form.total_fare) : null, cash_amount: form.payment_method === 'CASH' && form.total_fare ? parseInt(form.total_fare) : null };
+      const body = { ...form, total_fare: form.total_fare ? parseInt(form.total_fare) : null, mileage_used: Number(form.mileage_used) || 0, cash_amount: form.payment_method === 'CASH' && form.total_fare ? parseInt(form.total_fare) : null };
       delete body._call_id;
       const result = await createRide(body);
       if (form._call_id && result.ride_id) { try { await completeCall(form._call_id, { ride_id: result.ride_id }); } catch (e) { console.error('콜 완료 처리 실패:', e); } }
@@ -185,7 +186,7 @@ export default function RideNew({ user }) {
 
   const handleBack = () => { if (form.started_at && !fromCall) { if (confirm('임시저장 후 나가시겠습니까?')) { saveDraft(form); nav('/'); } } else { nav(fromCall ? '/calls' : '/'); } };
   const handleClearDraft = () => { if (confirm('임시저장된 데이터를 삭제하고 새로 작성하시겠습니까?')) { clearDraft(); setForm({ ...defaultForm }); setRestored(false); } };
-  const clearUser = () => setForm(f => ({ ...f, customer_id: null, customer_name: '', customer_phone: '', partner_id: null, partner_name: '', user_type: '' }));
+  const clearUser = () => setForm(f => ({ ...f, customer_id: null, customer_name: '', customer_phone: '', partner_id: null, partner_name: '', user_type: '', mileage_used: 0 }));
   const filteredRiders = riders.filter(r => r.name.includes(pickupSearch));
   const paymentButtons = paymentTypes.length > 0 ? paymentTypes.map(pt => ({ value: pt.code, label: pt.label })) : [{ value: 'CASH', label: '현금' }, { value: 'RIDER_ACCOUNT', label: '기사 계좌' }, { value: 'COMPANY_ACCOUNT', label: '회사 계좌' }, { value: 'NARASI', label: '나라시' }, { value: 'UNPAID', label: '미수' }];
   const selectedUserLabel = form.user_type === 'partner' ? `🏢 ${form.partner_name}` : form.customer_name ? `👤 ${form.customer_name}${form.customer_phone ? ` ${form.customer_phone}` : ''}` : null;
@@ -276,6 +277,15 @@ export default function RideNew({ user }) {
               <span style={{ marginLeft: 6, fontSize: 14, color: '#9ca3af', fontWeight: 600, flexShrink: 0 }}>원</span>
             </div>
           </div>
+
+          {/* 마일리지 사용 (고객 선택 + 운임 입력 후 활성화) */}
+          <MileageUseSelect
+            customerId={form.customer_id}
+            totalFare={parseInt(form.total_fare) || 0}
+            value={form.mileage_used}
+            earnPct={10}
+            onChange={(v) => up('mileage_used')(v)}
+          />
 
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>결제 방법</label>

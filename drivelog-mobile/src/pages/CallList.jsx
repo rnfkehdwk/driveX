@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchCalls, acceptCall, cancelCall, createCall, fetchCustomers, fetchPartners, fetchPaymentTypes } from '../api/client';
+import { fetchCalls, acceptCall, cancelCall, createCall, fetchCustomers, fetchPartners, fetchPaymentTypes, fetchFrequentAddresses, fetchRiders } from '../api/client';
 import AddressSearchModal from '../components/AddressSearchModal';
 import KakaoMiniMap from '../components/KakaoMiniMap';
 
@@ -14,7 +14,7 @@ const STATUS_MAP = {
 
 // 콜 생성 모달 (SUPER_ADMIN 전용) — 카카오 주소 검색 + 지도 추가
 function CreateCallModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ start_address: '', start_detail: '', end_address: '', end_detail: '', customer_id: '', partner_id: '', estimated_fare: '', payment_method: 'CASH', memo: '' });
+  const [form, setForm] = useState({ start_address: '', start_detail: '', end_address: '', end_detail: '', customer_id: '', partner_id: '', estimated_fare: '', payment_method: 'CASH', memo: '', assigned_rider_id: '' });
   const [saving, setSaving] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [partners, setPartners] = useState([]);
@@ -28,10 +28,33 @@ function CreateCallModal({ onClose, onCreated }) {
   const [addrSearch, setAddrSearch] = useState(null); // 'start' | 'end' | null
   const [startCoord, setStartCoord] = useState({ lat: null, lng: null });
   const [endCoord, setEndCoord] = useState({ lat: null, lng: null });
+  // 자주 가는 곳 (즐겨찾기 대체)
+  const [frequentStart, setFrequentStart] = useState([]);
+  const [frequentEnd, setFrequentEnd] = useState([]);
+  const [showFreqStart, setShowFreqStart] = useState(false);
+  const [showFreqEnd, setShowFreqEnd] = useState(false);
+  // 기사 목록 (수동 지명용)
+  const [riders, setRiders] = useState([]);
 
-  useEffect(() => { fetchPaymentTypes().then(r => setPayTypes(r.data || [])).catch(() => {}); }, []);
-  useEffect(() => { if (custSearch.length >= 1) { fetchCustomers({ q: custSearch, limit: 10 }).then(r => { setCustomers(r.data || []); setShowCustList(true); }).catch(() => {}); } else { setCustomers([]); setShowCustList(false); } }, [custSearch]);
-  useEffect(() => { if (partSearch.length >= 1) { fetchPartners({ q: partSearch, limit: 10 }).then(r => { setPartners(r.data || []); setShowPartList(true); }).catch(() => {}); } else { setPartners([]); setShowPartList(false); } }, [partSearch]);
+  // 결제구분 + 고객/제휴업체 전체 목록을 모달 열 때 한 번만 로드 (focus만 해도 드롭다운 펼침 가능)
+  useEffect(() => {
+    fetchPaymentTypes().then(r => setPayTypes(r.data || [])).catch(() => {});
+    fetchCustomers({ limit: 200 }).then(r => setCustomers(r.data || [])).catch(() => {});
+    fetchPartners({ active_only: 'true', limit: 200 }).then(r => setPartners(r.data || [])).catch(() => {});
+    // 자주 가는 곳 로드
+    fetchFrequentAddresses({ type: 'start', limit: 15 }).then(r => setFrequentStart(r.data || [])).catch(() => {});
+    fetchFrequentAddresses({ type: 'end', limit: 15 }).then(r => setFrequentEnd(r.data || [])).catch(() => {});
+    // 기사 목록 (수동 지명)
+    fetchRiders().then(r => setRiders(r.data || [])).catch(() => {});
+  }, []);
+
+  // 클라이언트 측 필터
+  const filteredCust = custSearch
+    ? customers.filter(c => c.name?.includes(custSearch) || c.phone?.includes(custSearch) || c.customer_code?.includes(custSearch))
+    : customers;
+  const filteredPart = partSearch
+    ? partners.filter(p => p.name?.includes(partSearch))
+    : partners;
 
   const handleAddrSelect = (result) => {
     if (addrSearch === 'start') {
@@ -48,10 +71,10 @@ function CreateCallModal({ onClose, onCreated }) {
     if (!form.start_address.trim()) { alert('출발지를 입력해주세요.'); return; }
     setSaving(true);
     try {
-      const body = { ...form, customer_id: selectedCust?.customer_id || null, partner_id: selectedPart?.partner_id || null, estimated_fare: form.estimated_fare ? Number(form.estimated_fare) : null };
+      const body = { ...form, customer_id: selectedCust?.customer_id || null, partner_id: selectedPart?.partner_id || null, estimated_fare: form.estimated_fare ? Number(form.estimated_fare) : null, assigned_rider_id: form.assigned_rider_id || null };
       if (!body.end_address) delete body.end_address;
-      await createCall(body);
-      alert('콜이 생성되었습니다.');
+      const res = await createCall(body);
+      alert(res.message || '콜이 생성되었습니다.');
       onCreated();
     } catch (err) { alert(err.response?.data?.error || '콜 생성 실패'); }
     finally { setSaving(false); }
@@ -79,30 +102,72 @@ function CreateCallModal({ onClose, onCreated }) {
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: '#f1f5f9', fontSize: 16, cursor: 'pointer' }}>✕</button>
           </div>
 
-          {/* 출발지 — 검색 버튼 추가 */}
-          <div style={{ marginBottom: 14 }}>
+          {/* 출발지 — 검색 버튼 + ⭐ 자주 가는 곳 */}
+          <div style={{ marginBottom: 14, position: 'relative' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', display: 'block', marginBottom: 4 }}>📍 출발지 *</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input value={form.start_address} onChange={e => setForm(f => ({ ...f, start_address: e.target.value }))} placeholder="출발지 주소" style={{ ...is, flex: 1 }} />
+              {frequentStart.length > 0 && (
+                <button onClick={() => setShowFreqStart(!showFreqStart)} title="자주 가는 출발지" style={{ padding: '0 12px', borderRadius: 10, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#d97706', fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>⭐</button>
+              )}
               <button onClick={() => setAddrSearch('start')} style={{ padding: '0 12px', borderRadius: 10, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>🔍</button>
             </div>
+            {showFreqStart && frequentStart.length > 0 && (
+              <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, minWidth: 260, maxHeight: 280, overflowY: 'auto', zIndex: 30, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 출발지</div>
+                {frequentStart.map((f, i) => (
+                  <div
+                    key={i}
+                    onClick={() => {
+                      setForm(prev => ({ ...prev, start_address: f.address, start_detail: f.detail || prev.start_detail }));
+                      setShowFreqStart(false);
+                    }}
+                    style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#1e293b' }}>{f.address}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{f.use_count}회 사용</div>
+                  </div>
+                ))}
+              </div>
+            )}
             <input value={form.start_detail} onChange={e => setForm(f => ({ ...f, start_detail: e.target.value }))} placeholder="상세 주소 (선택)" style={{ ...is, marginTop: 6, fontSize: 13 }} />
           </div>
 
-          {/* 도착지 — 검색 버튼 추가 */}
-          <div style={{ marginBottom: 14 }}>
+          {/* 도착지 — 검색 버튼 + ⭐ 자주 가는 곳 */}
+          <div style={{ marginBottom: 14, position: 'relative' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', display: 'block', marginBottom: 4 }}>📍 도착지</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input value={form.end_address} onChange={e => setForm(f => ({ ...f, end_address: e.target.value }))} placeholder="도착지 주소 (미정 가능)" style={{ ...is, flex: 1 }} />
+              {frequentEnd.length > 0 && (
+                <button onClick={() => setShowFreqEnd(!showFreqEnd)} title="자주 가는 도착지" style={{ padding: '0 12px', borderRadius: 10, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#d97706', fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>⭐</button>
+              )}
               <button onClick={() => setAddrSearch('end')} style={{ padding: '0 12px', borderRadius: 10, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>🔍</button>
             </div>
+            {showFreqEnd && frequentEnd.length > 0 && (
+              <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, minWidth: 260, maxHeight: 280, overflowY: 'auto', zIndex: 30, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 도착지</div>
+                {frequentEnd.map((f, i) => (
+                  <div
+                    key={i}
+                    onClick={() => {
+                      setForm(prev => ({ ...prev, end_address: f.address, end_detail: f.detail || prev.end_detail }));
+                      setShowFreqEnd(false);
+                    }}
+                    style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#1e293b' }}>{f.address}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{f.use_count}회 사용</div>
+                  </div>
+                ))}
+              </div>
+            )}
             <input value={form.end_detail} onChange={e => setForm(f => ({ ...f, end_detail: e.target.value }))} placeholder="상세 주소 (선택)" style={{ ...is, marginTop: 6, fontSize: 13 }} />
           </div>
 
           {/* 카카오 지도 (출발/도착 좌표가 있을 때) */}
           <KakaoMiniMap startLat={startCoord.lat} startLng={startCoord.lng} endLat={endCoord.lat} endLng={endCoord.lng} height={180} />
 
-          {/* 고객 검색 */}
+          {/* 고객 검색 — focus시 드롭다운 자동 펼침 */}
           <div style={{ marginBottom: 14, position: 'relative' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', display: 'block', marginBottom: 4 }}>👤 고객</label>
             {selectedCust ? (
@@ -111,20 +176,36 @@ function CreateCallModal({ onClose, onCreated }) {
                 <button onClick={() => { setSelectedCust(null); setCustSearch(''); setForm(f => ({ ...f, customer_id: '' })); }} style={{ border: 'none', background: 'none', fontSize: 16, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
               </div>
             ) : (
-              <input value={custSearch} onChange={e => setCustSearch(e.target.value)} placeholder="고객명 검색..." style={is} />
-            )}
-            {showCustList && customers.length > 0 && !selectedCust && (
-              <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 160, overflowY: 'auto', zIndex: 5, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                {customers.map(c => (
-                  <div key={c.customer_id} onClick={() => { setSelectedCust(c); setCustSearch(''); setShowCustList(false); }} style={{ padding: '10px 14px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ fontWeight: 600 }}>{c.name}</span> <span style={{ color: '#94a3b8' }}>{c.phone || ''}</span>
+              <>
+                <input
+                  value={custSearch}
+                  onChange={e => { setCustSearch(e.target.value); setShowCustList(true); }}
+                  onFocus={() => setShowCustList(true)}
+                  onBlur={() => setTimeout(() => setShowCustList(false), 200)}
+                  placeholder="고객명, 코드, 전화번호 검색..."
+                  style={is}
+                />
+                {showCustList && filteredCust.length > 0 && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 220, overflowY: 'auto', zIndex: 5, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    {filteredCust.slice(0, 50).map(c => (
+                      <div key={c.customer_id} onMouseDown={() => { setSelectedCust(c); setCustSearch(''); setShowCustList(false); }} style={{ padding: '12px 14px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ fontWeight: 600 }}>{c.name}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{c.customer_code || ''}{c.phone ? ` · ${c.phone}` : ''}</div>
+                      </div>
+                    ))}
+                    {filteredCust.length > 50 && <div style={{ padding: 8, textAlign: 'center', fontSize: 11, color: '#94a3b8' }}>상위 50명만 표시 — 검색어를 좁혀주세요</div>}
                   </div>
-                ))}
-              </div>
+                )}
+                {showCustList && custSearch && filteredCust.length === 0 && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, fontSize: 12, color: '#94a3b8', textAlign: 'center', zIndex: 5, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    검색 결과 없음
+                  </div>
+                )}
+              </>
             )}
           </div>
 
-          {/* 제휴업체 검색 */}
+          {/* 제휴업체 검색 — focus시 드롭다운 자동 펼침 */}
           <div style={{ marginBottom: 14, position: 'relative' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', display: 'block', marginBottom: 4 }}>🏢 제휴업체</label>
             {selectedPart ? (
@@ -133,16 +214,32 @@ function CreateCallModal({ onClose, onCreated }) {
                 <button onClick={() => { setSelectedPart(null); setPartSearch(''); setForm(f => ({ ...f, partner_id: '' })); }} style={{ border: 'none', background: 'none', fontSize: 16, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
               </div>
             ) : (
-              <input value={partSearch} onChange={e => setPartSearch(e.target.value)} placeholder="업체명 검색..." style={is} />
-            )}
-            {showPartList && partners.length > 0 && !selectedPart && (
-              <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 160, overflowY: 'auto', zIndex: 5, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                {partners.map(p => (
-                  <div key={p.partner_id} onClick={() => { setSelectedPart(p); setPartSearch(''); setShowPartList(false); }} style={{ padding: '10px 14px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ fontWeight: 600 }}>{p.name}</span> <span style={{ color: '#94a3b8' }}>{p.phone || ''}</span>
+              <>
+                <input
+                  value={partSearch}
+                  onChange={e => { setPartSearch(e.target.value); setShowPartList(true); }}
+                  onFocus={() => setShowPartList(true)}
+                  onBlur={() => setTimeout(() => setShowPartList(false), 200)}
+                  placeholder="업체명 검색..."
+                  style={is}
+                />
+                {showPartList && filteredPart.length > 0 && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 220, overflowY: 'auto', zIndex: 5, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    {filteredPart.slice(0, 50).map(p => (
+                      <div key={p.partner_id} onMouseDown={() => { setSelectedPart(p); setPartSearch(''); setShowPartList(false); }} style={{ padding: '12px 14px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ fontWeight: 600 }}>{p.name}</div>
+                        {p.phone && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{p.phone}</div>}
+                      </div>
+                    ))}
+                    {filteredPart.length > 50 && <div style={{ padding: 8, textAlign: 'center', fontSize: 11, color: '#94a3b8' }}>상위 50개만 표시 — 검색어를 좁혀주세요</div>}
                   </div>
-                ))}
-              </div>
+                )}
+                {showPartList && partSearch && filteredPart.length === 0 && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, fontSize: 12, color: '#94a3b8', textAlign: 'center', zIndex: 5, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    검색 결과 없음
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -168,9 +265,29 @@ function CreateCallModal({ onClose, onCreated }) {
           </div>
 
           {/* 메모 */}
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', display: 'block', marginBottom: 4 }}>📝 메모</label>
             <textarea value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} rows={2} placeholder="특이사항, 고객 요청 등..." style={{ ...is, resize: 'vertical' }} />
+          </div>
+
+          {/* 기사 수동 지명 (선택) */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', display: 'block', marginBottom: 4 }}>🚗 기사 지명 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(선택)</span></label>
+            <select
+              value={form.assigned_rider_id}
+              onChange={e => setForm(f => ({ ...f, assigned_rider_id: e.target.value }))}
+              style={{ ...is, background: form.assigned_rider_id ? '#eff6ff' : 'white', borderColor: form.assigned_rider_id ? '#bfdbfe' : '#e2e8f0', fontWeight: form.assigned_rider_id ? 600 : 400 }}
+            >
+              <option value="">— 지명 없음 (모든 기사가 경쟁) —</option>
+              {riders.map(r => (
+                <option key={r.user_id} value={r.user_id}>
+                  {r.name}{r.role === 'SUPER_ADMIN' ? ' ☆' : ''}
+                </option>
+              ))}
+            </select>
+            {form.assigned_rider_id && (
+              <div style={{ fontSize: 11, color: '#2563eb', marginTop: 4, paddingLeft: 4 }}>→ 대기 없이 바로 배정됩니다</div>
+            )}
           </div>
 
           {/* 버튼 */}

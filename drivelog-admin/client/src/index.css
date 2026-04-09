@@ -39,3 +39,63 @@ th { position: sticky; top: 0; z-index: 2; }
   /* 입력 필드 폰트 */
   input, select, textarea { font-size: 14px !important; }
 }
+
+/* ============================================================ */
+/* 인쇄 전용 스타일 — 운임정산서 1페이지 출력                       */
+/* ============================================================ */
+@media print {
+  /* 사이드바, 헤더, 푸터, 네비게이션 등 모두 숨김 */
+  body * { visibility: hidden; }
+  /* .print-area 안의 요소만 표시 */
+  .print-area, .print-area * { visibility: visible; }
+  .print-area {
+    position: absolute;
+    left: 0; top: 0; right: 0;
+    width: 100%;
+    padding: 12mm 10mm;
+    background: white;
+  }
+
+  /* 인쇄에서 숨길 화면 전용 요소들 */
+  .no-print { display: none !important; }
+
+  /* 인쇄에만 보이는 헤더 — 평소엔 숨김 */
+  .print-only { display: block !important; }
+
+  /* 페이지 여백 */
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  /* 색상 보존 (테두리, 배경) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* 카드 배경/그림자 단순화 */
+  .print-area > div {
+    box-shadow: none !important;
+    page-break-inside: avoid;
+  }
+
+  /* 테이블이 잘리지 않도록 */
+  table { page-break-inside: avoid; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+
+  /* 폰트 크기 약간 축소 (1페이지 적합) */
+  .print-area {
+    font-size: 11px !important;
+  }
+  .print-area h1, .print-area h2 { font-size: 18px !important; }
+  .print-area table { font-size: 10px !important; }
+  .print-area table th, .print-area table td {
+    padding: 6px 8px !important;
+  }
+}
+
+/* 화면에선 print-only 요소 숨김 */
+.print-only { display: none; }

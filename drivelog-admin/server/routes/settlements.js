@@ -211,4 +211,197 @@ router.get('/daily', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (re
   }
 });
 
+// ============================================================
+// GET /api/settlements/monthly-payout?month=YYYY-MM
+//
+// 월별 기사 정산 내역서 (손으로 계산하던 걸 자동화)
+//
+// 계산 로직:
+//   - COMMISSION (수수료%): 기사 못 = 매출 × (1 - %), 회사 못 = 매출 × %
+//   - HOURLY (시급제): 기사 못 = 시급 × 근무시간 (매출 무관), 매출은 모두 회사것
+//   - PER_RIDE (건당): 기사 못 = 건수 × 건당단가, 매출은 모두 회사것
+//
+// 기사보유 vs 회사보유는 settlement_groups로 분류 (결제방법별 자동 매핑)
+// 기사가 들고있는 돈 (기사보유) - 기사못 = 기사→회사 입금액
+// (음수는 회사→기사 지급액으로 뒤집음)
+// ============================================================
+router.get('/monthly-payout', authenticate, authorize('SUPER_ADMIN', 'MASTER'), checkLicense, async (req, res) => {
+  try {
+    const { month } = req.query;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: '월(month)을 YYYY-MM 형식으로 입력해주세요.' });
+    }
+    const companyId = req.user.role === 'MASTER' ? (req.query.company_id || req.user.company_id) : req.user.company_id;
+    if (!companyId) return res.status(400).json({ error: '업체를 선택해주세요.' });
+
+    // 1. 업체 기본 정산 설정 로드
+    const [companySettings] = await pool.execute(
+      'SELECT * FROM company_pay_settings WHERE company_id = ?',
+      [companyId]
+    );
+    const cs = companySettings[0] || {
+      pay_type: 'COMMISSION',
+      default_hourly_rate: 0,
+      default_per_ride_rate: 0,
+      default_commission_pct: 20,
+    };
+
+    // 2. 기사별 개별 단가 로드
+    const [riderRates] = await pool.execute(
+      `SELECT u.user_id, u.name, u.phone, u.role,
+              r.hourly_rate, r.per_ride_rate, r.commission_pct
+       FROM users u
+       LEFT JOIN rider_pay_rates r ON u.user_id = r.rider_id AND r.company_id = ?
+       WHERE u.company_id = ? AND u.role IN ('RIDER', 'SUPER_ADMIN') AND u.status = 'ACTIVE'
+       ORDER BY u.name`,
+      [companyId, companyId]
+    );
+
+    // 3. 해당 월의 rides 전체 조회 (결제구분 + 정산그룹 조인)
+    const [rides] = await pool.execute(
+      `SELECT r.ride_id, r.rider_id, r.total_fare, r.started_at,
+              pt.payment_type_id, pt.label AS payment_label, pt.settlement_group_id,
+              sg.name AS group_name
+       FROM rides r
+       LEFT JOIN payment_types pt ON pt.payment_type_id = r.payment_type_id
+       LEFT JOIN settlement_groups sg ON sg.group_id = pt.settlement_group_id
+       WHERE r.company_id = ?
+         AND r.status != 'CANCELLED'
+         AND DATE_FORMAT(r.started_at, '%Y-%m') = ?`,
+      [companyId, month]
+    );
+
+    // 4. 시급제용 — 해당 월 attendance 합계 (기사별 calculated_hours)
+    const [attendance] = await pool.execute(
+      `SELECT rider_id, SUM(IFNULL(calculated_hours, 0)) AS total_hours
+       FROM rider_attendance
+       WHERE company_id = ?
+         AND DATE_FORMAT(work_date, '%Y-%m') = ?
+       GROUP BY rider_id`,
+      [companyId, month]
+    );
+    const hoursByRider = {};
+    attendance.forEach(a => { hoursByRider[a.rider_id] = Number(a.total_hours || 0); });
+
+    // 5. 기사별로 집계
+    // 기사보유 그룹은 통상 "기사보유" 이름의 settlement_group, 회사보유는 "회사보유"
+    // 그룹명에 "기사" 포함 → 기사보유, "회사" 포함 → 회사보유으로 자동 판단
+    const ridesByRider = {};
+    rides.forEach(ride => {
+      const rid = ride.rider_id;
+      if (rid == null) return; // 미배정 ride는 제외
+      if (!ridesByRider[rid]) {
+        ridesByRider[rid] = { total_fare: 0, ride_count: 0, rider_holds: 0, company_holds: 0 };
+      }
+      const fare = Number(ride.total_fare || 0);
+      ridesByRider[rid].total_fare += fare;
+      ridesByRider[rid].ride_count += 1;
+      // 그룹명으로 기사보유/회사보유 분류
+      const groupName = ride.group_name || '';
+      if (groupName.includes('기사')) {
+        ridesByRider[rid].rider_holds += fare;
+      } else if (groupName.includes('회사')) {
+        ridesByRider[rid].company_holds += fare;
+      } else {
+        // 미분류 — 기사보유으로 간주 (현금 기본)
+        ridesByRider[rid].rider_holds += fare;
+      }
+    });
+
+    // 6. 기사별 정산 계산
+    const riderResults = riderRates.map(rider => {
+      const summary = ridesByRider[rider.user_id] || { total_fare: 0, ride_count: 0, rider_holds: 0, company_holds: 0 };
+      const workHours = hoursByRider[rider.user_id] || 0;
+
+      // 정산 방식 결정 (기사 개별 설정 우선, 없으면 업체 기본)
+      let payType = cs.pay_type;
+      let commissionPct = cs.default_commission_pct;
+      let hourlyRate = cs.default_hourly_rate;
+      let perRideRate = cs.default_per_ride_rate;
+
+      // rider_pay_rates에서 개별 설정 있으면 그게 우선
+      // 결정 규칙: commission_pct가 있으면 COMMISSION, hourly_rate 있으면 HOURLY, per_ride_rate 있으면 PER_RIDE
+      if (rider.commission_pct != null) {
+        payType = 'COMMISSION';
+        commissionPct = Number(rider.commission_pct);
+      } else if (rider.hourly_rate != null && Number(rider.hourly_rate) > 0) {
+        payType = 'HOURLY';
+        hourlyRate = Number(rider.hourly_rate);
+      } else if (rider.per_ride_rate != null && Number(rider.per_ride_rate) > 0) {
+        payType = 'PER_RIDE';
+        perRideRate = Number(rider.per_ride_rate);
+      }
+
+      // 기사 못 계산
+      let riderShare = 0;
+      let companyShare = 0;
+      if (payType === 'COMMISSION') {
+        const pct = Number(commissionPct || 0) / 100;
+        riderShare = Math.round(summary.total_fare * (1 - pct));
+        companyShare = summary.total_fare - riderShare;
+      } else if (payType === 'HOURLY') {
+        riderShare = Math.round(workHours * Number(hourlyRate || 0));
+        companyShare = summary.total_fare - riderShare; // 음수 가능
+      } else if (payType === 'PER_RIDE') {
+        riderShare = Math.round(summary.ride_count * Number(perRideRate || 0));
+        companyShare = summary.total_fare - riderShare;
+      }
+
+      // 정산 방향: 기사보유(기사가 들고있는 돈) - 기사못
+      // 양수 → 기사가 회사에 입금, 음수 → 회사가 기사에게 지급
+      const balance = summary.rider_holds - riderShare;
+      const riderOwesCompany = balance > 0 ? balance : 0;
+      const companyOwesRider = balance < 0 ? -balance : 0;
+
+      return {
+        rider_id: rider.user_id,
+        rider_name: rider.name,
+        rider_phone: rider.phone,
+        is_super_admin: rider.role === 'SUPER_ADMIN',
+        pay_type: payType,
+        commission_pct: payType === 'COMMISSION' ? Number(commissionPct) : null,
+        hourly_rate: payType === 'HOURLY' ? Number(hourlyRate) : null,
+        per_ride_rate: payType === 'PER_RIDE' ? Number(perRideRate) : null,
+        work_hours: payType === 'HOURLY' ? workHours : null,
+        ride_count: summary.ride_count,
+        total_fare: summary.total_fare,
+        rider_holds: summary.rider_holds,
+        company_holds: summary.company_holds,
+        rider_share: riderShare,
+        company_share: companyShare,
+        rider_owes_company: riderOwesCompany,
+        company_owes_rider: companyOwesRider,
+      };
+    });
+
+    // 7. 운행 상의 가 있는 기사만 장프 (운행 0 + 시급 0 제외)
+    const filteredRiders = riderResults.filter(r => r.ride_count > 0 || (r.work_hours && r.work_hours > 0));
+
+    // 8. 전체 합계
+    const grandTotal = filteredRiders.reduce((acc, r) => ({
+      ride_count: acc.ride_count + r.ride_count,
+      total_fare: acc.total_fare + r.total_fare,
+      rider_holds: acc.rider_holds + r.rider_holds,
+      company_holds: acc.company_holds + r.company_holds,
+      rider_share: acc.rider_share + r.rider_share,
+      company_share: acc.company_share + r.company_share,
+      rider_owes_company: acc.rider_owes_company + r.rider_owes_company,
+      company_owes_rider: acc.company_owes_rider + r.company_owes_rider,
+    }), { ride_count: 0, total_fare: 0, rider_holds: 0, company_holds: 0, rider_share: 0, company_share: 0, rider_owes_company: 0, company_owes_rider: 0 });
+
+    res.json({
+      month,
+      company_pay_type: cs.pay_type,
+      default_commission_pct: Number(cs.default_commission_pct || 0),
+      default_hourly_rate: Number(cs.default_hourly_rate || 0),
+      default_per_ride_rate: Number(cs.default_per_ride_rate || 0),
+      riders: filteredRiders,
+      total: grandTotal,
+    });
+  } catch (err) {
+    console.error('GET /settlements/monthly-payout error:', err);
+    res.status(500).json({ error: '월별 정산 조회에 실패했습니다.' });
+  }
+});
+
 module.exports = router;

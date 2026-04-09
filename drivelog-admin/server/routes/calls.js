@@ -73,12 +73,48 @@ router.get('/waiting-count', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ error: '조회 실패' }); }
 });
 
+// GET /api/calls/frequent-addresses?type=start|end&limit=20
+// 자주 사용한 출발지/도착지 top N (최근 90일)
+// 콜생성 입력 시 즐겨찾기/자동완성용
+router.get('/frequent-addresses', authenticate, async (req, res) => {
+  try {
+    const type = req.query.type === 'end' ? 'end_address' : 'start_address';
+    const detailCol = type === 'end_address' ? 'end_detail' : 'start_detail';
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const days = Math.min(parseInt(req.query.days) || 90, 365);
+
+    // 빈 주소, 검증용 데이터 제외
+    const [rows] = await pool.execute(
+      `SELECT ${type} AS address,
+              MAX(${detailCol}) AS detail,
+              COUNT(*) AS use_count,
+              MAX(created_at) AS last_used_at
+       FROM calls
+       WHERE company_id = ?
+         AND ${type} IS NOT NULL
+         AND ${type} != ''
+         AND ${type} NOT LIKE '%자동검증%'
+         AND ${type} NOT LIKE '%검증%'
+         AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       GROUP BY ${type}
+       ORDER BY use_count DESC, last_used_at DESC
+       LIMIT ?`,
+      [req.user.company_id, days, limit]
+    );
+
+    res.json({ data: rows, type: req.query.type === 'end' ? 'end' : 'start' });
+  } catch (err) {
+    console.error('GET /calls/frequent-addresses error:', err);
+    res.status(500).json({ error: '자주 가는 곳 조회 실패' });
+  }
+});
+
 // POST /api/calls — 콜 생성 (SUPER_ADMIN만)
 router.post('/', authenticate, authorize('SUPER_ADMIN'), checkLicense, async (req, res) => {
   if (req.licenseExpired) return res.status(403).json({ error: '서비스 이용기간이 만료되어 콜 생성이 불가합니다.' });
 
   try {
-    const { customer_id, partner_id, start_address, start_detail, end_address, end_detail, estimated_fare, payment_method, payment_type_id, memo } = req.body;
+    const { customer_id, partner_id, start_address, start_detail, end_address, end_detail, estimated_fare, payment_method, payment_type_id, memo, assigned_rider_id } = req.body;
 
     if (!start_address) return res.status(400).json({ error: '출발지를 입력해주세요.' });
 
@@ -89,17 +125,48 @@ router.post('/', authenticate, authorize('SUPER_ADMIN'), checkLicense, async (re
       payment_method
     );
 
+    // 수동 지명: 기사 검증 (같은 업체 소속, RIDER 또는 SUPER_ADMIN이어야 함)
+    let assignedRiderId = null;
+    let initialStatus = 'WAITING';
+    let assignedAt = null;
+    if (assigned_rider_id) {
+      const [riderRows] = await pool.execute(
+        "SELECT user_id, role, status FROM users WHERE user_id = ? AND company_id = ? AND role IN ('RIDER', 'SUPER_ADMIN') AND status = 'ACTIVE'",
+        [assigned_rider_id, req.user.company_id]
+      );
+      if (riderRows.length === 0) {
+        return res.status(400).json({ error: '지명한 기사를 찾을 수 없습니다.' });
+      }
+      assignedRiderId = riderRows[0].user_id;
+      initialStatus = 'ASSIGNED';
+      assignedAt = new Date();
+    }
+
     const [result] = await pool.execute(
-      `INSERT INTO calls (company_id, created_by, customer_id, partner_id, start_address, start_detail, end_address, end_detail, estimated_fare, payment_type_id, memo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO calls (company_id, created_by, customer_id, partner_id, start_address, start_detail, end_address, end_detail, estimated_fare, payment_type_id, memo, status, assigned_rider_id, assigned_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.user.company_id, req.user.user_id, customer_id || null, partner_id || null,
        start_address, start_detail || null, end_address || null, end_detail || null,
-       estimated_fare || null, resolvedPaymentTypeId, memo || null]
+       estimated_fare || null, resolvedPaymentTypeId, memo || null,
+       initialStatus, assignedRiderId, assignedAt]
     );
 
-    writeAuditLog({ company_id: req.user.company_id, user_id: req.user.user_id, action: 'CALL_CREATE', target_table: 'calls', target_id: result.insertId, ip_address: req.ip });
+    writeAuditLog({
+      company_id: req.user.company_id,
+      user_id: req.user.user_id,
+      action: assignedRiderId ? 'CALL_CREATE_ASSIGN' : 'CALL_CREATE',
+      target_table: 'calls',
+      target_id: result.insertId,
+      detail: assignedRiderId ? { assigned_rider_id: assignedRiderId } : null,
+      ip_address: req.ip
+    });
 
-    res.status(201).json({ call_id: result.insertId, message: '콜이 생성되었습니다.' });
+    res.status(201).json({
+      call_id: result.insertId,
+      status: initialStatus,
+      assigned_rider_id: assignedRiderId,
+      message: assignedRiderId ? '콜이 생성되어 지명된 기사에게 배정되었습니다.' : '콜이 생성되었습니다.'
+    });
   } catch (err) { console.error('POST /calls error:', err); res.status(500).json({ error: '콜 생성 실패' }); }
 });
 

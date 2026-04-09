@@ -3,6 +3,7 @@ const router = express.Router();
 const { pool } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
+const { geocodeAddress } = require('../config/kakao');
 
 // GET /api/companies
 router.get('/', authenticate, authorize('MASTER'), async (req, res) => {
@@ -50,10 +51,17 @@ router.post('/', authenticate, authorize('MASTER'), async (req, res) => {
     const [existing] = await pool.execute('SELECT company_id FROM companies WHERE company_code = ?', [company_code]);
     if (existing.length > 0) return res.status(409).json({ error: '이미 사용 중인 업체코드입니다.' });
 
+    // 주소가 있으면 카카오 geocoding으로 좌표 자동 채움 (실패해도 등록은 진행)
+    let lat = null, lng = null;
+    if (address) {
+      const geo = await geocodeAddress(address);
+      if (geo) { lat = geo.lat; lng = geo.lng; }
+    }
+
     const [result] = await pool.execute(
-      `INSERT INTO companies (company_code, company_name, business_number, ceo_name, phone, email, address, license_type, plan_id, status, approved_at, approved_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', NOW(), ?)`,
-      [company_code, company_name, business_number || null, ceo_name || null, phone || null, email || null, address || null, license_type || 'MONTHLY', plan_id || 1, req.user.user_id]
+      `INSERT INTO companies (company_code, company_name, business_number, ceo_name, phone, email, address, lat, lng, license_type, plan_id, status, approved_at, approved_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', NOW(), ?)`,
+      [company_code, company_name, business_number || null, ceo_name || null, phone || null, email || null, address || null, lat, lng, license_type || 'MONTHLY', plan_id || 1, req.user.user_id]
     );
 
     await pool.execute('INSERT INTO gps_settings (company_id) VALUES (?)', [result.insertId]);
@@ -81,6 +89,14 @@ router.put('/:id', authenticate, authorize('MASTER'), async (req, res) => {
     const updates = [], values = [];
     for (const k of allowed) {
       if (req.body[k] !== undefined) { updates.push(`${k} = ?`); values.push(req.body[k]); }
+    }
+    // 주소가 변경되면 카카오 geocoding으로 lat/lng 자동 재계산
+    if (req.body.address !== undefined) {
+      const geo = await geocodeAddress(req.body.address);
+      if (geo) {
+        updates.push('lat = ?', 'lng = ?');
+        values.push(geo.lat, geo.lng);
+      }
     }
     if (updates.length === 0) return res.status(400).json({ error: '수정할 항목이 없습니다.' });
     values.push(req.params.id);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchCalls, createCall, cancelCall, updateCall, fetchCustomers, fetchPartners, fetchPaymentTypes } from '../api/client';
+import { fetchCalls, createCall, cancelCall, updateCall, fetchCustomers, fetchPartners, fetchPaymentTypes, fetchFrequentAddresses, fetchRiders } from '../api/client';
 import AddressSearchModal from '../components/AddressSearchModal';
 import KakaoMiniMap from '../components/KakaoMiniMap';
 
@@ -14,14 +14,24 @@ const TABS = ['ALL', 'WAITING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELL
 const TAB_LABELS = { ALL: '전체', WAITING: '대기', ASSIGNED: '배정', IN_PROGRESS: '운행중', COMPLETED: '완료', CANCELLED: '취소' };
 
 function CreateCallModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ start_address: '', start_detail: '', start_lat: null, start_lng: null, end_address: '', end_detail: '', end_lat: null, end_lng: null, customer_id: '', partner_id: '', estimated_fare: '', payment_type_id: '', payment_method: '', memo: '' });
+  const [form, setForm] = useState({ start_address: '', start_detail: '', start_lat: null, start_lng: null, end_address: '', end_detail: '', end_lat: null, end_lng: null, customer_id: '', partner_id: '', estimated_fare: '', payment_type_id: '', payment_method: '', memo: '', assigned_rider_id: '' });
   const [customers, setCustomers] = useState([]);
   const [partners, setPartners] = useState([]);
   const [paymentTypes, setPaymentTypes] = useState([]);
+  const [riders, setRiders] = useState([]);
   const [custSearch, setCustSearch] = useState('');
   const [partSearch, setPartSearch] = useState('');
+  const [selectedCust, setSelectedCust] = useState(null);
+  const [selectedPart, setSelectedPart] = useState(null);
+  const [showCustList, setShowCustList] = useState(false);
+  const [showPartList, setShowPartList] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addrSearch, setAddrSearch] = useState(null); // 'start' | 'end' | null
+  // 자주 가는 곳 (즐겨찾기 대체)
+  const [frequentStart, setFrequentStart] = useState([]);
+  const [frequentEnd, setFrequentEnd] = useState([]);
+  const [showFreqStart, setShowFreqStart] = useState(false);
+  const [showFreqEnd, setShowFreqEnd] = useState(false);
 
   useEffect(() => {
     fetchCustomers({ limit: 9999 }).then(r => setCustomers(r.data || [])).catch(() => {});
@@ -34,6 +44,11 @@ function CreateCallModal({ onClose, onCreated }) {
         setForm(f => ({ ...f, payment_type_id: list[0].payment_type_id, payment_method: list[0].code }));
       }
     }).catch(() => {});
+    // 자주 가는 출발지/도착지 로드
+    fetchFrequentAddresses({ type: 'start', limit: 15 }).then(r => setFrequentStart(r.data || [])).catch(() => {});
+    fetchFrequentAddresses({ type: 'end', limit: 15 }).then(r => setFrequentEnd(r.data || [])).catch(() => {});
+    // 기사 목록 로드 (수동 지명용)
+    fetchRiders().then(r => setRiders(r.data || [])).catch(() => {});
   }, []);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
@@ -53,8 +68,8 @@ function CreateCallModal({ onClose, onCreated }) {
     try {
       const body = {
         ...form,
-        customer_id: form.customer_id || null,
-        partner_id: form.partner_id || null,
+        customer_id: selectedCust?.customer_id || null,
+        partner_id: selectedPart?.partner_id || null,
         estimated_fare: form.estimated_fare ? parseInt(form.estimated_fare) : null,
         payment_type_id: form.payment_type_id || null,
         payment_method: form.payment_method || 'CASH',
@@ -62,9 +77,10 @@ function CreateCallModal({ onClose, onCreated }) {
         start_lng: form.start_lng,
         end_lat: form.end_lat,
         end_lng: form.end_lng,
+        assigned_rider_id: form.assigned_rider_id || null,
       };
-      await createCall(body);
-      alert('콜이 생성되었습니다.');
+      const res = await createCall(body);
+      alert(res.message || '콜이 생성되었습니다.');
       onCreated();
       onClose();
     } catch (err) { alert(err.response?.data?.error || '콜 생성 실패'); }
@@ -89,38 +105,161 @@ function CreateCallModal({ onClose, onCreated }) {
         {/* 출발지 / 도착지 */}
         <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 10 }}>📍 위치 정보</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8, position: 'relative' }}>
             <div><label style={ls}>출발지 *</label><input value={form.start_address} onChange={set('start_address')} placeholder="출발 주소" style={is} /></div>
+            <div style={{ alignSelf: 'end', position: 'relative' }}>
+              <button
+                onClick={() => setShowFreqStart(!showFreqStart)}
+                disabled={frequentStart.length === 0}
+                title={frequentStart.length === 0 ? '자주 가는 곳 없음' : '자주 가는 출발지'}
+                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: frequentStart.length > 0 ? '#fffbeb' : '#f8fafc', color: frequentStart.length > 0 ? '#d97706' : '#cbd5e1', fontSize: 13, fontWeight: 700, cursor: frequentStart.length > 0 ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}
+              >⭐</button>
+              {showFreqStart && frequentStart.length > 0 && (
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, minWidth: 280, maxHeight: 300, overflowY: 'auto', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 출발지</div>
+                  {frequentStart.map((f, i) => (
+                    <div
+                      key={i}
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, start_address: f.address, start_detail: f.detail || prev.start_detail }));
+                        setShowFreqStart(false);
+                      }}
+                      style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#fffbeb'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                    >
+                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{f.address}</div>
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{f.use_count}회 사용</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div style={{ alignSelf: 'end' }}><button onClick={() => setAddrSearch('start')} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>🔍</button></div>
           </div>
           <div style={{ marginBottom: 8 }}><label style={ls}>출발 상세</label><input value={form.start_detail} onChange={set('start_detail')} placeholder="동/호수 등" style={is} /></div>
           <KakaoMiniMap startLat={form.start_lat} startLng={form.start_lng} height={160} />
           <div style={{ height: 1, background: '#e2e8f0', margin: '12px 0' }} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8, position: 'relative' }}>
             <div><label style={ls}>도착지 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(미정 가능)</span></label><input value={form.end_address} onChange={set('end_address')} placeholder="도착 주소 (비워두면 미정)" style={is} /></div>
+            <div style={{ alignSelf: 'end', position: 'relative' }}>
+              <button
+                onClick={() => setShowFreqEnd(!showFreqEnd)}
+                disabled={frequentEnd.length === 0}
+                title={frequentEnd.length === 0 ? '자주 가는 곳 없음' : '자주 가는 도착지'}
+                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: frequentEnd.length > 0 ? '#fffbeb' : '#f8fafc', color: frequentEnd.length > 0 ? '#d97706' : '#cbd5e1', fontSize: 13, fontWeight: 700, cursor: frequentEnd.length > 0 ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}
+              >⭐</button>
+              {showFreqEnd && frequentEnd.length > 0 && (
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, minWidth: 280, maxHeight: 300, overflowY: 'auto', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 도착지</div>
+                  {frequentEnd.map((f, i) => (
+                    <div
+                      key={i}
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, end_address: f.address, end_detail: f.detail || prev.end_detail }));
+                        setShowFreqEnd(false);
+                      }}
+                      style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#fffbeb'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                    >
+                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{f.address}</div>
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{f.use_count}회 사용</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div style={{ alignSelf: 'end' }}><button onClick={() => setAddrSearch('end')} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>🔍</button></div>
           </div>
           <div><label style={ls}>도착 상세</label><input value={form.end_detail} onChange={set('end_detail')} placeholder="동/호수 등" style={is} /></div>
           <KakaoMiniMap startLat={form.end_lat} startLng={form.end_lng} height={160} />
         </div>
 
-        {/* 고객 / 제휴업체 */}
+        {/* 고객 / 제휴업체 — 검색 input + 자동 드롭다운 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-          <div>
+          {/* 고객 */}
+          <div style={{ position: 'relative' }}>
             <label style={ls}>고객</label>
-            <select value={form.customer_id} onChange={set('customer_id')} style={{ ...is, background: 'white' }}>
-              <option value="">선택 안 함</option>
-              {filteredCust.slice(0, 100).map(c => (<option key={c.customer_id} value={c.customer_id}>{c.name} ({c.customer_code})</option>))}
-            </select>
-            {customers.length > 10 && <input value={custSearch} onChange={e => setCustSearch(e.target.value)} placeholder="고객 검색..." style={{ ...is, marginTop: 4, fontSize: 12, padding: '6px 10px' }} />}
+            {selectedCust ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                <span style={{ flex: 1, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedCust.name} <span style={{ color: '#94a3b8', fontSize: 12 }}>{selectedCust.customer_code || ''}</span>
+                </span>
+                <button onClick={() => { setSelectedCust(null); setCustSearch(''); }} style={{ border: 'none', background: 'none', fontSize: 16, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+              </div>
+            ) : (
+              <>
+                <input
+                  value={custSearch}
+                  onChange={e => { setCustSearch(e.target.value); setShowCustList(true); }}
+                  onFocus={() => setShowCustList(true)}
+                  onBlur={() => setTimeout(() => setShowCustList(false), 200)}
+                  placeholder="고객명, 코드, 전화번호 검색..."
+                  style={is}
+                />
+                {showCustList && filteredCust.length > 0 && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, maxHeight: 220, overflowY: 'auto', zIndex: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    {filteredCust.slice(0, 50).map(c => (
+                      <div key={c.customer_id} onMouseDown={() => { setSelectedCust(c); setCustSearch(''); setShowCustList(false); }}
+                        style={{ padding: '10px 14px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+                        <div style={{ fontWeight: 600 }}>{c.name}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{c.customer_code || ''}{c.phone ? ` · ${c.phone}` : ''}</div>
+                      </div>
+                    ))}
+                    {filteredCust.length > 50 && <div style={{ padding: 8, textAlign: 'center', fontSize: 11, color: '#94a3b8' }}>상위 50명만 표시 — 검색어를 좁혀주세요</div>}
+                  </div>
+                )}
+                {showCustList && custSearch && filteredCust.length === 0 && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 12, color: '#94a3b8', textAlign: 'center', zIndex: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    검색 결과 없음
+                  </div>
+                )}
+              </>
+            )}
           </div>
-          <div>
+
+          {/* 제휴업체 */}
+          <div style={{ position: 'relative' }}>
             <label style={ls}>제휴업체</label>
-            <select value={form.partner_id} onChange={set('partner_id')} style={{ ...is, background: 'white' }}>
-              <option value="">선택 안 함</option>
-              {filteredPart.slice(0, 100).map(p => (<option key={p.partner_id} value={p.partner_id}>{p.name}</option>))}
-            </select>
-            {partners.length > 10 && <input value={partSearch} onChange={e => setPartSearch(e.target.value)} placeholder="업체 검색..." style={{ ...is, marginTop: 4, fontSize: 12, padding: '6px 10px' }} />}
+            {selectedPart ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                <span style={{ flex: 1, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedPart.name}</span>
+                <button onClick={() => { setSelectedPart(null); setPartSearch(''); }} style={{ border: 'none', background: 'none', fontSize: 16, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+              </div>
+            ) : (
+              <>
+                <input
+                  value={partSearch}
+                  onChange={e => { setPartSearch(e.target.value); setShowPartList(true); }}
+                  onFocus={() => setShowPartList(true)}
+                  onBlur={() => setTimeout(() => setShowPartList(false), 200)}
+                  placeholder="업체명 검색..."
+                  style={is}
+                />
+                {showPartList && filteredPart.length > 0 && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, maxHeight: 220, overflowY: 'auto', zIndex: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    {filteredPart.slice(0, 50).map(p => (
+                      <div key={p.partner_id} onMouseDown={() => { setSelectedPart(p); setPartSearch(''); setShowPartList(false); }}
+                        style={{ padding: '10px 14px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+                        <div style={{ fontWeight: 600 }}>{p.name}</div>
+                        {p.phone && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{p.phone}</div>}
+                      </div>
+                    ))}
+                    {filteredPart.length > 50 && <div style={{ padding: 8, textAlign: 'center', fontSize: 11, color: '#94a3b8' }}>상위 50개만 표시 — 검색어를 좁혀주세요</div>}
+                  </div>
+                )}
+                {showPartList && partSearch && filteredPart.length === 0 && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 12, color: '#94a3b8', textAlign: 'center', zIndex: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    검색 결과 없음
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -146,6 +285,22 @@ function CreateCallModal({ onClose, onCreated }) {
               ))}
             </select>
           </div>
+        </div>
+        {/* 기사 수동 지명 (선택) */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={ls}>🚗 기사 지명 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(선택 — 지명하면 대기 없이 바로 배정)</span></label>
+          <select
+            value={form.assigned_rider_id}
+            onChange={set('assigned_rider_id')}
+            style={{ ...is, background: form.assigned_rider_id ? '#eff6ff' : 'white', borderColor: form.assigned_rider_id ? '#bfdbfe' : '#e2e8f0', fontWeight: form.assigned_rider_id ? 600 : 400 }}
+          >
+            <option value="">— 지명 없음 (모든 기사가 경쟁) —</option>
+            {riders.map(r => (
+              <option key={r.user_id} value={r.user_id}>
+                {r.name}{r.phone ? ` (${r.phone})` : ''}{r.role === 'SUPER_ADMIN' ? ' ☆' : ''}
+              </option>
+            ))}
+          </select>
         </div>
         <div style={{ marginBottom: 20 }}>
           <label style={ls}>메모</label>

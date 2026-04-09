@@ -83,7 +83,11 @@ router.post('/', authenticate, authorize('RIDER', 'SUPER_ADMIN'), checkLicense, 
     let mileage_earned = 0;
     if (total_fare) {
       const [policies] = await conn.execute(`SELECT mileage_earn_pct FROM fare_policies WHERE company_id = ? AND is_active = TRUE AND effective_from <= CURDATE() ORDER BY effective_from DESC LIMIT 1`, [req.user.company_id]);
-      if (policies.length > 0) mileage_earned = Math.floor(total_fare * policies[0].mileage_earn_pct / 100);
+      if (policies.length > 0) {
+        // 적립 대상 = 원금 - 마일리지 사용액 (마일리지로 결제한 부분은 적립 제외)
+        const earnableAmount = Math.max(0, Number(total_fare) - Number(mileage_used || 0));
+        mileage_earned = Math.floor(earnableAmount * policies[0].mileage_earn_pct / 100);
+      }
     }
 
     // payment_type_id 자동 lookup (프론트가 명시하지 않아도 payment_method 코드로 자동 매핑)
@@ -109,6 +113,27 @@ router.post('/', authenticate, authorize('RIDER', 'SUPER_ADMIN'), checkLicense, 
       const balanceAfter = (custs[0]?.mileage_balance || 0) + mileage_earned;
       await conn.execute(`INSERT INTO customer_mileage (customer_id, company_id, type, amount, balance_after, description, ride_id, processed_by) VALUES (?, ?, 'EARN', ?, ?, '운행 마일리지 적립', ?, ?)`, [customer_id, req.user.company_id, mileage_earned, balanceAfter, rideId, req.user.user_id]);
       await conn.execute('UPDATE customers SET mileage_balance = ? WHERE customer_id = ?', [balanceAfter, customer_id]);
+    }
+
+    // 마일리지 사용 처리 (USE) — 운행 작성 시 mileage_used 값이 있으면 자동 차감
+    // 한국 대리업체 관행: 5000원 단위로만 사용 가능
+    if (mileage_used && Number(mileage_used) > 0 && customer_id) {
+      const useAmt = Math.round(Number(mileage_used));
+      // 5000원 단위 검증
+      if (useAmt % 5000 !== 0) {
+        await conn.rollback();
+        return res.status(400).json({ error: '마일리지는 5,000원 단위로만 사용 가능합니다.' });
+      }
+      // 잠금 후 잔액 재조회 (적립 이후 상태)
+      const [usedCusts] = await conn.execute('SELECT mileage_balance FROM customers WHERE customer_id = ? FOR UPDATE', [customer_id]);
+      const currentBalance = Number(usedCusts[0]?.mileage_balance || 0);
+      if (currentBalance < useAmt) {
+        await conn.rollback();
+        return res.status(400).json({ error: `마일리지 잔액이 부족합니다. 현재 잔액: ${currentBalance.toLocaleString()}원` });
+      }
+      const balanceAfterUse = currentBalance - useAmt;
+      await conn.execute(`INSERT INTO customer_mileage (customer_id, company_id, type, amount, balance_after, description, ride_id, processed_by) VALUES (?, ?, 'USE', ?, ?, '운행 결제 시 사용', ?, ?)`, [customer_id, req.user.company_id, useAmt, balanceAfterUse, rideId, req.user.user_id]);
+      await conn.execute('UPDATE customers SET mileage_balance = ? WHERE customer_id = ?', [balanceAfterUse, customer_id]);
     }
 
     await conn.commit();

@@ -56,7 +56,4 @@ export const acceptCall = (id) => api.put(`/calls/${id}/accept`).then(r => r.dat
 export const completeCall = (id, b) => api.put(`/calls/${id}/complete`, b).then(r => r.data);
 export const cancelCall = (id, b) => api.put(`/calls/${id}/cancel`, b).then(r => r.data);
 
-// 마일리지
-export const fetchCustomerMileage = (id) => api.get(`/mileage/customer/${id}`).then(r => r.data);
-
 export default api;

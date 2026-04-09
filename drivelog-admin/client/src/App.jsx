@@ -22,6 +22,7 @@ import MyInquiries from './pages/MyInquiries';
 import CallManage from './pages/CallManage';
 import Reports from './pages/Reports';
 import FareSettlement from './pages/FareSettlement';
+import Attendance from './pages/Attendance';
 import { logout as apiLogout, createInquiry, changePassword, getMe } from './api/client';
 
 const ADMIN_VERSION = __BUILD_TIME__ || 'dev';
@@ -35,7 +36,7 @@ const masterNavGroups = [
 const superAdminNavGroups = [
   { title: '대시보드', items: [{ path: '/', label: '대시보드', icon: '📊' }, { path: '/reports', label: '월간리포트', icon: '📈' }]},
   { title: '운행', items: [{ path: '/calls', label: '콜 관리', icon: '📞' }, { path: '/rides', label: '운행일지', icon: '🚗' }, { path: '/partners', label: '제휴업체 콜', icon: '🏢' }, { path: '/mileage', label: '마일리지', icon: '⭐' }]},
-  { title: '정산', items: [{ path: '/settlements', label: '정산관리', icon: '💰' }, { path: '/fare-settlement', label: '운임 정산', icon: '💵' }, { path: '/fare-policies', label: '요금설정', icon: '💵' }, { path: '/billing', label: '사용료', icon: '🧾' }]},
+  { title: '정산', items: [{ path: '/settlements', label: '정산관리', icon: '💰' }, { path: '/fare-settlement', label: '운임 정산', icon: '💵' }, { path: '/attendance', label: '근무시간', icon: '🕐' }, { path: '/fare-policies', label: '요금설정', icon: '💵' }, { path: '/billing', label: '사용료', icon: '🧾' }]},
   { title: '관리', items: [{ path: '/users', label: '기사관리', icon: '🚘' }, { path: '/customers', label: '고객관리', icon: '👤' }, { path: '/partner-manage', label: '제휴업체관리', icon: '🤝' }, { path: '/payment-types', label: '결제구분', icon: '💳' }, { path: '/my-inquiries', label: '문의하기', icon: '📩' }]},
 ];
 
@@ -211,6 +212,7 @@ export default function App() {
           <Route path="/payment-types" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <PaymentTypes />}</RoleGuard>} />
           <Route path="/settlements" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Settlements />}</RoleGuard>} />
           <Route path="/fare-settlement" element={<RoleGuard user={user} roles={['SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <FareSettlement />}</RoleGuard>} />
+          <Route path="/attendance" element={<RoleGuard user={user} roles={['SUPER_ADMIN', 'MASTER']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <Attendance />}</RoleGuard>} />
           <Route path="/fare-policies" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}>{isRiderExceeded ? <Navigate to="/users" replace /> : <FarePolicies />}</RoleGuard>} />
           <Route path="/billing" element={<RoleGuard user={user} roles={['MASTER', 'SUPER_ADMIN']}><Billing user={user} /></RoleGuard>} />
           <Route path="/my-inquiries" element={<RoleGuard user={user} roles={['SUPER_ADMIN']}><MyInquiries /></RoleGuard>} />
