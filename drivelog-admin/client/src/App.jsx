@@ -153,7 +153,7 @@ export default function App() {
         setShowPwModal(true);
       }
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => { if (user && !user.license_expired) refreshUserState(); }, [location.pathname]);
 

@@ -111,12 +111,20 @@ router.post('/find-id', async (req, res) => {
       return res.json({ found: false, message: '일치하는 계정을 찾을 수 없습니다.' });
     }
 
-    const accounts = rows.map(r => ({
-      masked_login_id: maskLoginId(r.login_id),
-      company_name: r.company_name || '(시스템)',
-      company_code: r.company_code || null,
-      created_at: r.created_at ? r.created_at.toISOString().slice(0, 10) : null,
-    }));
+    const accounts = rows.map(r => {
+      // created_at은 mariadb 드라이버 설정에 따라 Date 객체이거나 string일 수 있음 → 안전 처리
+      let createdAtStr = null;
+      if (r.created_at) {
+        if (typeof r.created_at === 'string') createdAtStr = r.created_at.slice(0, 10);
+        else if (r.created_at instanceof Date) createdAtStr = r.created_at.toISOString().slice(0, 10);
+      }
+      return {
+        masked_login_id: maskLoginId(r.login_id),
+        company_name: r.company_name || '(시스템)',
+        company_code: r.company_code || null,
+        created_at: createdAtStr,
+      };
+    });
 
     res.json({ found: true, count: accounts.length, accounts });
   } catch (err) {

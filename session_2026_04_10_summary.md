@@ -1,289 +1,381 @@
-# DriveLog 세션 요약 — 2026-04-10 (오전)
+# DriveLog 세션 요약 — 2026-04-10 (전일)
 
 > **이전 세션**: `session_2026_04_09_summary.md` — 마일리지 시스템 2단계 (프론트엔드 통합)
-> **이번 세션 주제**: 신규 가입 오류 디버깅 → 비밀번호 찾기/아이디 찾기 시스템 구축 → docker-compose 마운트 사고 복구
+> **이번 세션 주제**:
+> - **오전**: 신규 가입 오류 디버깅 → 비밀번호 찾기/아이디 찾기 시스템 구축 → docker-compose 마운트 사고 복구 → SMTP 배포 완료
+> - **오후**: 이메일 필드 추가 (계정관리/기사관리) → 브라우저 e2e 검증 → 발견된 백엔드/프론트엔드 버그 2건 수정
+> **이번 세션 백업**: `backup/session_2026_04_10_summary_20260410_1100.md` (오전 작업본)
 
 ---
 
 ## 🎯 이번 세션 목표
 
-처음엔 단순한 가입 오류 1건 디버깅으로 시작했으나, 사용자 요청으로 다음 기능들이 추가됨:
-1. 신규 업체 가입 시 "가입 처리 중 오류가 발생했습니다" 에러 해결
-2. 로그인 페이지에 아이디 찾기 / 비밀번호 찾기 추가
-3. 비밀번호 정책 강화 (추후) 메모 남기기
-4. 개인정보 암호화 현황 검토 및 권고사항 정리
-5. SMTP(Gmail) 기반 임시비밀번호 이메일 발송 시스템 구축
-6. MASTER/SUPER_ADMIN의 임시비밀번호 직접 발급 기능
-7. 임시비밀번호 사용 시 강제 비밀번호 변경 모달
+처음엔 단순한 가입 오류 1건 디버깅으로 시작했으나, 사용자 요청으로 다음 기능들이 추가되고 검증까지 진행됨:
+1. ✅ 신규 업체 가입 시 "가입 처리 중 오류가 발생했습니다" 에러 해결
+2. ✅ 로그인 페이지에 아이디 찾기 / 비밀번호 찾기 추가
+3. ✅ SMTP(Gmail) 기반 임시비밀번호 이메일 발송 시스템 구축
+4. ✅ MASTER/SUPER_ADMIN의 임시비밀번호 직접 발급 기능
+5. ✅ 임시비밀번호 사용 시 강제 비밀번호 변경 모달
+6. ✅ **계정관리/기사관리에 이메일 수정 필드 추가** (오후 작업)
+7. ✅ **전체 e2e 브라우저 검증 + 버그 2건 발견·수정** (오후 작업)
+8. ⏸ 비밀번호 정책 강화 (추후) — 메모만 남김
+9. ⏸ 개인정보 암호화 현황 검토 — 의사결정 보류
 
 ---
 
 ## ✅ 완료된 작업 (시간순)
 
-### 1. 신규 가입 오류 디버깅 및 해결
+### [오전] 1. 신규 가입 오류 디버깅 및 해결
 **증상**: 셀프 가입 시 모든 항목 입력 후 "가입 처리 중 오류가 발생했습니다" alert.
 
 **원인**: `system_settings.auto_approve_trial = 'true'` 상태에서 `publicRoutes.js`가 `companies.status = 'TRIAL'`을 INSERT 시도. 그러나 `companies.status` ENUM은 `PENDING/ACTIVE/SUSPENDED/DELETED`만 허용 → `Data truncated for column 'status'` 에러 → 500.
 
-**해결**: `server/routes/publicRoutes.js`에서 `'TRIAL'` → `'ACTIVE'`로 수정. 무료체험 여부는 이미 `trial_expires_at` 컬럼으로 구분되므로 status에 별도 값 불필요.
+**해결**: `'TRIAL'` → `'ACTIVE'`. 무료체험 여부는 이미 `trial_expires_at` 컬럼으로 구분.
 
-**검증**: 사장님이 가입 재시도 → 정상 가입 확인.
+### [오전] 2. 개인정보 암호화 현황 정리
+- ✅ 비밀번호: bcrypt 12 rounds / 리프레시 토큰: SHA-256 / 통신: HTTPS — 안전
+- ⚠️ 이름, 전화, 이메일, 주소, 차량번호, 면허번호, 고객 PII: **평문 저장**
+- 권고: (가) 볼륨 암호화 + DB 외부포트 차단 (ROI 최고) / (나) `users.driver_license` 컬럼만 핀포인트 AES-256
+- → **의사결정 보류**
 
-### 2. 개인정보 암호화 현황 정리
-사용자 질문 "개인정보들 DB에 전부 암호화 해서 넣고있나?"에 대한 답변:
-- ✅ 비밀번호: bcrypt 12 rounds (안전)
-- ✅ 리프레시 토큰: SHA-256 해시 (안전)
-- ✅ 통신: HTTPS/TLS
-- ⚠️ 이름, 전화, 이메일, 주소, 차량번호, 면허번호: **평문 저장**
-- ⚠️ 고객 PII (이름/전화/주소): **평문**
+### [오전] 3. 비밀번호 찾기 / 아이디 찾기 설계 결정
+- 발송 인프라: **Gmail SMTP (무료)**, 일 500통
+- 임시비번 8자리, 영문 대소문자+숫자, 0/O/1/l/I 제외
+- 만료 10분, 사용 후 강제 변경
+- 마스킹 ID 노출 (`cb***m`)
+- 업체코드 칸을 **선택 입력**으로 변경 (login_id 글로벌 UNIQUE 확인됨)
+- 이메일 미등록자 fallback: inquiries에 PASSWORD_RESET 자동 등록
 
-권고사항: (가) Synology 볼륨 암호화 + DB 외부포트 차단 → 가장 ROI 높음. (나) `users.driver_license` 컬럼만 AES-256으로 핀포인트 암호화. 컬럼 단위 전체 암호화는 작업량 대비 효과 낮음 (검색 기능 영향).
-
-→ **의사결정 보류 상태** (다음 세션에서 결정 필요)
-
-### 3. 비밀번호 찾기 / 아이디 찾기 설계 결정
-3가지 옵션 검토 후 사용자 결정:
-- **옵션 다 (Gmail SMTP)** 채택
-- 임시비밀번호 **8자리** (영문 대소문자+숫자, 0/O/1/l/I 제외)
-- 마스킹 ID 노출 (`cb***m` 형태)
-- 임시비번 만료 시간 **10분**
-- 임시비번 로그인 시 **강제 비밀번호 변경** 적용
-
-업체코드 기억 부담 문제로 추가 결정:
-- DB 확인 결과 `users.login_id`에 글로벌 UNIQUE 제약 (`uk_login_id`) 존재 확인
-- → **로그인 시 업체코드 칸을 선택 입력으로 변경** (평소엔 비워두면 됨)
-- → 아이디/비번 찾기에서도 업체코드 없이 이름+전화로 찾기 가능
-
-이메일 미등록 사용자 처리:
-- (가) 신규 가입 시 이메일 필수화
-- (나) 기존 사용자 비번찾기 시 이메일 없으면 inquiries에 PASSWORD_RESET 자동 등록 → MASTER 직접 발급 fallback
-
-### 4. 코드 작업 (백엔드 + 프론트 + 인프라)
-변경된 파일 13개:
+### [오전] 4. 코드 작업 (백엔드 + 프론트 + 인프라) — 14개 파일
 
 **백엔드**:
-1. `server/utils/mailer.js` (신규) — Gmail SMTP + 임시비번 메일 템플릿 + 8자리 생성기
-2. `server/db/migration_2026_04_09_password_reset.sql` (신규) — 컬럼 2개 + ENUM 추가
-3. `server/routes/publicRoutes.js` — `find-id`, `request-password-reset` 추가 + register 이메일 필수화
-4. `server/routes/users.js` — `issue-temp-password` 라우트 추가 (8자리 자동 생성)
-5. `server/routes/auth.js` — 로그인 응답에 `password_must_change` 플래그 + 임시비번 만료 검증 + change-password 시 플래그 해제
-6. `server/index.js` — find-id, password-reset rate limit 추가 (시간당 5회/IP)
-7. `server/package.json` — `nodemailer ^6.9.16` 의존성 추가
+1. `server/utils/mailer.js` (신규) — Gmail SMTP + 메일 템플릿 + 8자리 생성기
+2. `server/db/migration_2026_04_09_password_reset.sql` (신규) — 컬럼 2개 + ENUM
+3. `server/routes/publicRoutes.js` — find-id, request-password-reset 추가 + register 이메일 필수
+4. `server/routes/users.js` — issue-temp-password 라우트 추가
+5. `server/routes/auth.js` — password_must_change 플래그 + 만료 검증
+6. `server/index.js` — rate limit 2개 추가 (시간당 5회/IP)
+7. `server/package.json` — nodemailer ^6.9.16
 
 **프론트**:
-8. `client/src/api/client.js` — `findUserId`, `requestPasswordReset`, `issueTempPassword` 추가
-9. `client/src/pages/Login.jsx` — 업체코드 선택입력 + 아이디/비번 찾기 모달 2개 (전체 재작성)
-10. `client/src/pages/Register.jsx` — 이메일 필수 + 형식 검증
-11. `client/src/App.jsx` — `forced` 모드 PasswordModal (강제 비번 변경 시 닫기 차단)
-12. `client/src/pages/Users.jsx` — `🔑 임시비번` 버튼 + 결과 표시 모달
+8. `client/src/api/client.js` — API 함수 3개
+9. `client/src/pages/Login.jsx` — 업체코드 선택입력 + 모달 2개 (전면 재작성)
+10. `client/src/pages/Register.jsx` — 이메일 필수
+11. `client/src/App.jsx` — forced 모드 PasswordModal
+12. `client/src/pages/Users.jsx` — 🔑 임시비번 버튼 + 결과 모달
 
 **인프라**:
-13. `drivelog-admin/docker-compose.yml` — NAS 정상 버전과 동기화 (volumes 섹션 + SMTP env + 경고 주석)
-14. `package.json` (루트) — deploy:server 스크립트에서 `models` 제거, `utils` 추가
+13. `drivelog-admin/docker-compose.yml` (로컬) — NAS 정상본과 동기화
+14. `package.json` (루트) — deploy:server에 utils 추가, models 제거
 
-### 5. ⚠️ docker-compose 마운트 사고 (장시간 디버깅)
+### [오전] 5. ⚠️ docker-compose 마운트 사고 복구
+**증상**: SMTP env 추가 후 컨테이너가 v1.5로 표시 + trust proxy/ENOENT 에러
+**진단**: `docker inspect`의 Mounts가 비어있음 → `docker-compose.yml`의 api 서비스 블록에서 `volumes:` 3줄이 누락 → 이미지 박힌 옛 코드 실행 중
+**복구**: python3로 yml에 volumes 3줄 삽입 → `stop && rm && up -d --no-deps api` → v2.6 정상 복구
+**예방**: 로컬 yml을 NAS와 동기화 + 경고 주석 추가
 
-**증상**: 사장님이 .env에 SMTP 추가 + docker-compose down/up 실행 후 컨테이너가 v1.5로 보이고 trust proxy 에러 + ENOENT 에러 발생.
+### [오전] 6. nodemailer 배포 누락 사고
+**증상**: `Cannot find module '../utils/mailer'`로 컨테이너 죽음
+**원인**: `deploy:server` 스크립트의 scp 대상에 `utils` 폴더가 없음
+**복구**: 루트 package.json 수정 + 재배포
 
-**원인 진단 과정** (시간순):
-1. **DB 연결 실패**: `Access denied for user 'drivelog'@...`
-   - docker-compose.yml에 `DB_USER: drivelog`로 박혀있었음 (사장님 의도는 sykim)
-   - sed로 `sykim`으로 수정
-2. **컨테이너는 살았지만 v1.5 표시**: 
-   - 호스트의 `/server/index.js`는 v2.6 (4181 bytes, 14:31 수정)
-   - 컨테이너 안의 `/app/index.js`는 v1.5 (2973 bytes, 3월 17일 수정)
-   - **마운트가 깨져서 이미지에 박힌 옛날 코드를 실행 중**
-3. **`docker inspect` 결과**: `"Mounts": []` (마운트 비어있음)
-4. **`docker-compose config` 결과**: api 블록에 volumes 섹션 자체가 없음
-5. **결정적 단서**: `docker-compose.yml` 직접 확인 결과 api 서비스 블록에서 `volumes:` 3줄이 누락되어 있었음. 어느 시점에 yml 편집하다 사고.
-
-**해결**:
-- python3 스크립트로 `restart: always` 다음에 volumes 3줄 (`./server:/app`, `/app/node_modules`) 삽입
-- `docker-compose stop api && rm -f api && up -d --no-deps api`로 컨테이너 강제 재생성
-- 마운트 정상 확인 + v2.6 표시 + healthy 상태 복구
-
-**예방 조치**:
-- 로컬 `C:\Drivelog\drivelog-admin\docker-compose.yml`을 NAS 정상 버전과 동일하게 갱신
-- yml 파일 상단에 ⚠️ 주석 추가: "api 서비스의 volumes 섹션은 절대 삭제하지 말 것"
-- 다음에 NAS yml이 깨지면 로컬 파일을 복사해 즉시 복원 가능
-
-### 6. nodemailer 설치 + mailer.js 배포 사고
-**증상**: nodemailer는 컨테이너에 설치 성공했는데 컨테이너가 `Cannot find module '../utils/mailer'` 에러로 죽음.
-
-**원인**: 루트 `package.json`의 `deploy:server` 스크립트가 업로드 폴더 목록에 `utils`를 포함하지 않음. mailer.js는 로컬에만 있고 NAS로 안 올라간 상태.
-
-**해결**:
-1. 로컬 `package.json`의 deploy:server 스크립트 수정 — `models` 제거, `utils` 추가
-2. `npm run deploy:all` 재실행 → utils/mailer.js 정상 업로드
-3. `docker-compose up -d api`로 컨테이너 다시 생성
-
-### 7. DB 마이그레이션 실행 완료
-`migration_2026_04_09_password_reset.sql` 실행 결과:
-- ✅ `users.password_must_change` (tinyint(1), NOT NULL DEFAULT 0)
-- ✅ `users.temp_password_expires_at` (datetime, NULL)
+### [오전] 7. DB 마이그레이션 실행 완료
+- ✅ `users.password_must_change` (tinyint(1) DEFAULT 0)
+- ✅ `users.temp_password_expires_at` (datetime NULL)
 - ✅ `inquiries.inquiry_type` ENUM에 `'PASSWORD_RESET'` 추가
+
+---
+
+## ✅ 오후 작업 (검증 + 추가 패치)
+
+### [오후] 8. Users.jsx에 이메일 수정 필드 추가
+
+**문제**: 사장님이 검증 환경 구축 중 발견 — "계정관리/기사관리 모달에는 소속/이름/전화/차량번호/차종만 있고 **이메일 수정 UI가 없어서** 비번찾기 시스템 자체를 테스트할 수 없음".
+
+**진단**:
+- 백엔드 `users.js`는 이미 OK — GET 응답에 email 포함, POST/PUT의 `baseAllowed`에 `email` 포함
+- 문제는 프론트엔드 `Users.jsx`만 — form state, openNew, openEdit, handleSave, 모달 입력 필드 배열에 email 누락
+- App.jsx 라우터 확인: `/users` 경로 한 곳에 `<Users />` 컴포넌트 매핑 → **MASTER "계정관리"와 SUPER_ADMIN "기사관리"는 같은 컴포넌트** (사이드바 라벨만 다름) → 한 번의 패치로 두 화면 모두 커버
+
+**패치 (`Users.jsx` 5곳)**:
+1. `useState` form 초기값에 `email: ''` 추가
+2. `openNew` 초기화에 `email: ''` 추가
+3. `openEdit`에 `email: u.email || ''` 추가
+4. `handleSave` 수정 분기: body에 `email: form.email || null` + 클라이언트 형식 검증 (`/^[^\s@]+@[^\s@]+\.[^\s@]+$/`)
+5. `handleSave` 등록 분기: 형식 검증 + 빈값일 때 body에서 제외
+6. 모달 입력 필드 배열에 `{ k: 'email', label: '이메일 (비밀번호 찾기용)', ph: 'example@gmail.com', type: 'email' }` 추가 (이름/연락처 다음, 차량번호 앞)
+
+**백업**: `C:\Drivelog\backup\Users_jsx_20260410_1430.jsx` (원본 그대로)
+
+### [오후] 9. 브라우저 e2e 검증 — 통과한 항목
+
+| # | 검증 항목 | 결과 |
+|---|---|---|
+| 1 | 모달의 이메일 필드 표시 + 기존 값 자동 로드 (test 계정의 `dwlee7788@naver.com`) | ✅ |
+| 2 | PUT으로 이메일 변경 → DB 반영 → GET 재확인 → 원복 (4단계 e2e) | ✅ |
+| 3 | 로그인 화면 — 업체코드 (선택) 라벨 + "평소엔 비워두셔도 됩니다" placeholder | ✅ |
+| 4 | "아이디 찾기 \| 비밀번호 찾기" 링크 | ✅ |
+| 5 | **아이디 찾기 모달** — 이름+전화 입력 → "✅ 1개 계정을 찾았습니다" + 양양대리 cb\*\*\*m + 가입일 카드 | ✅ |
+| 6 | **🔑 임시비번 발급 결과 모달** — 8자리, 복사 버튼, "이메일 자동 발송" 메시지, 만료/안내 텍스트 | ✅ |
+| 7 | 임시비번 형식 (`uaK4wtnY` — 8자, 대소문자+숫자, 0/O/1/l/I 없음) | ✅ |
+| 8 | **Gmail SMTP 메일 발송** — 사장님 메일함 도착 확인 완료 (사장님 보고) | ✅ |
+| 9 | 임시비번으로 로그인 200 OK + JWT 발급 | ✅ |
+| 10 | localStorage user에 password_must_change=true, temp_password_expires_at 주입 | ✅ |
+| 11 | **강제 비밀번호 변경 모달 표시** (취소 버튼 없음, forced 모드) | ✅ |
+| 12 | password_history 재사용 차단 동작 ("최근 사용한 비밀번호 재사용 불가") | ✅ |
+| 13 | 새 비밀번호 변경 → 자동 로그아웃 → 로그인 페이지 redirect | ✅ |
+| 14 | 새 비밀번호로 재로그인 200 OK + password_must_change 해제 | ✅ |
+
+### [오후] 10. 🐛 발견된 버그 + 수정 — 2건
+
+#### 🐛 버그 1: `publicRoutes.js` find-id 무조건 500 에러
+
+**증상**: `POST /api/public/find-id` 호출 시 항상 500 — "아이디 찾기에 실패했습니다." (UI 모달은 정상 동작)
+
+**원인**: find-id 라우트의 응답 매핑에서 `r.created_at.toISOString().slice(0, 10)` 호출. 사장님 NAS의 mariadb 드라이버 설정상 datetime이 **Date 객체가 아닌 string으로 반환**됨. string에는 `.toISOString()` 메서드가 없어 `TypeError` → catch 블록 → 500.
+
+**다른 라우트는 왜 안 터졌나**: `register`나 `me` 등 다른 곳은 created_at을 클라이언트로 그대로 넘기거나(타입 변환 안 함), 별도 처리. find-id는 `slice(0,10)`을 적용하려 했던 게 화근.
+
+**패치**: 안전 처리 패턴으로 변경
+```js
+let createdAtStr = null;
+if (r.created_at) {
+  if (typeof r.created_at === 'string') createdAtStr = r.created_at.slice(0, 10);
+  else if (r.created_at instanceof Date) createdAtStr = r.created_at.toISOString().slice(0, 10);
+}
+```
+
+**배포**: 사장님 `npm run deploy:server` 실행 → 200 OK 검증 완료, 모달에 cb\*\*\*m 카드 정상 표시
+
+#### 🐛 버그 2: `App.jsx` useEffect deps `[]` — 임시비번 로그인 시 강제 변경 모달이 안 뜸
+
+**증상**: 임시비번으로 로그인 성공 후 password_must_change=true가 localStorage에 정상 주입됐는데 강제 변경 모달이 화면에 안 뜸. 페이지 새로고침(`location.reload()`) 한 번 하면 즉시 뜸.
+
+**원인**: App.jsx의 `useEffect(() => { ..., if (user.password_must_change) setShowPwModal(true); }, [])` — deps가 빈 배열이라 **첫 마운트 시점에만 동작**. 그런데 사용자가 임시비번으로 로그인하면 Login 컴포넌트가 `onLogin(setUser)` 호출 → user state만 바뀌고 App은 unmount/remount 안 됨 → useEffect 재실행 안 됨 → 모달 안 뜸.
+
+**진단 단서**:
+- localStorage user.password_must_change = `true` (boolean) — 정상
+- localStorage user.temp_password_expires_at = `"2026-04-10 10:45:39"` (string) — 정상
+- DOM에 강제 변경 모달 텍스트(`임시 비밀번호로 로그인`) 없음 → 모달 자체가 렌더 안 됨
+- `location.reload()` 후엔 즉시 모달 표시됨 → useEffect가 마운트 시에만 동작했단 결정적 증거
+
+**패치 (`App.jsx` 1줄)**:
+```js
+// useEffect(() => { ... }, []);
+useEffect(() => { ... }, [user]);  // user가 변할 때마다 재평가
+```
+
+**부작용 검토**: user가 변할 때마다 health/expired/rider 체크가 재실행되는데 모두 idempotent하고 setState도 동일값이면 React가 무시 → 무해.
+
+**영향 범위**: 사장님이 실제 사용자 흐름(임시비번 받아서 admin/모바일 로그인)에서도 동일 버그 발생할 예정이었음 → **반드시 배포 필요**.
+
+**배포 필요**: `npm run deploy:admin` (admin client만 변경, server는 영향 없음)
+
+### [오후] 11. test 계정 비밀번호 상태 변화
+
+검증 과정에서 test 계정 비밀번호가 다음 순서로 변경됨:
+1. 초기: `11223344`
+2. (검증 1단계) `request-password-reset` API 직접 호출 → 임시비번으로 변경 + dwlee7788@naver.com에 메일 발송
+3. (검증 2단계) `issue-temp-password` API로 새 임시비번 `uaK4wtnY` 발급 + 새 메일 발송 (이전 임시비번 무효화)
+4. (검증 3단계) `uaK4wtnY`로 로그인 → 강제 변경 모달 → 새 비번 시도
+5. **password_history 재사용 차단**으로 11223344 재설정 실패
+6. **현재 비밀번호: `Test1234!`** (password_history 충돌 회피용 임시값)
+7. password_must_change = FALSE, temp_password_expires_at = NULL (정상 상태)
+
+**11223344로 복구하려면**:
+```bash
+# NAS에서
+sudo docker exec -i drivelog-db mariadb -uroot -p'Drivelog12!@' drivelog_db -e \
+  "DELETE FROM password_history WHERE user_id = 51;"
+# 그다음 admin 계정관리 → test 옆 🔑 임시비번 → 메일 받기 → 새 비번 11223344로 변경
+```
+또는 그냥 `Test1234!`로 두어도 무방 (검증용 계정이므로).
 
 ---
 
 ## 🚧 다음 세션에서 진행할 작업
 
-### 1. 브라우저 동작 테스트 (최우선)
-사용자가 이번 세션에서 코드 배포 + 인프라 셋업까지 끝냈으나, 실제 브라우저 테스트는 안 함.
+### 1. App.jsx 패치 배포 (최우선, 5분)
+```bash
+cd /c/drivelog
+npm run deploy:admin
+```
+배포 후 cblim 본인 계정 비번찾기 흐름 검증:
+- 로그인 화면 → "비밀번호 찾기" → cblim/임창빈/01096981868
+- `rnfkehdrn@naver.com`에서 메일 받기
+- 임시비번으로 로그인 → **강제 변경 모달 즉시 표시** (이게 패치 검증 핵심)
+- 새 비번 → 자동 로그아웃 → 11223344로 재로그인 (password_history 충돌 시 다른 비번)
 
-**테스트 체크리스트**:
-- [ ] 양양대리 정상 로그인 + 데이터 정상 (활성 고객 239명, 마일리지 등)
-- [ ] 로그인 화면 변경 확인:
-  - [ ] 업체코드 칸 "(선택)" 라벨 + "평소엔 비워두셔도 됩니다" 플레이스홀더
-  - [ ] 하단 "아이디 찾기 | 비밀번호 찾기" 링크
-- [ ] 아이디 찾기 모달:
-  - [ ] 본인 이름+전화 입력 → 마스킹 ID (`cb***m`) + 업체명 표시
-- [ ] 비밀번호 찾기 모달:
-  - [ ] cblim+임창빈+전화 입력 → 등록 이메일로 발송 → 메일 도착 확인
-  - [ ] 8자리 임시비번 표시 (a-z, A-Z, 2-9, 0/O/1/l/I 제외)
-  - [ ] 임시비번으로 로그인 → 강제 변경 모달 (닫기 차단)
-  - [ ] 새 비번 변경 → 정상 로그인
-- [ ] 계정관리 임시비번 발급 버튼:
-  - [ ] 🔑 임시비번 노란 버튼 표시
-  - [ ] 클릭 → 결과 모달에 8자리 + 복사 버튼
-  - [ ] 이메일 등록 사용자: 자동 발송 메시지
-  - [ ] 이메일 미등록 사용자: 직접 전달 메시지
-- [ ] 신규 가입 시 이메일 필수 검증
+### 2. test 계정 11223344로 복구 (선택, 사장님 의향 따라)
+위 11번 항목의 SQL DELETE 후 임시비번 재발급 → 11223344로 변경
 
-**테스트 시 주의**:
-- 본인(cblim) 비밀번호로 테스트하면 비번이 임시비번으로 바뀜 → 새 비번(11223344) 재설정 필요
-- 안전하게 하려면 본인 계정에 개인 이메일 등록 후 비번찾기 → 본인 메일함에서 받기 → 새 비번으로 11223344 입력
-
-### 2. ⚠️ Gmail 앱 비밀번호 폐기/재발급 (필수, 보안)
-이번 세션에서 사장님이 채팅에 앱 비밀번호를 두 번 노출함:
-- 1차: `eluo zhah kujq gnpd` (재발급 안내함)
-- 2차: `lwuofrxxthwiqwru` (.env 내용 공유 시)
-
-**처리 절차**:
-1. https://myaccount.google.com/apppasswords 접속
-2. `drivelog` 항목 **삭제**
-3. 새로 발급 → 16자리
-4. **절대 채팅에 공유하지 말고** NAS에서 직접:
+### 3. ⚠️ Gmail 앱 비밀번호 폐기/재발급 (보안, 미해결)
+오전 세션에서 사장님이 채팅에 두 번 노출함. 아직 폐기/재발급 안 함. 절차:
+1. https://myaccount.google.com/apppasswords → drivelog 항목 삭제 → 새로 발급
+2. **NAS에서 직접** (채팅 공유 금지):
    ```bash
-   sudo vi /volume1/docker/drivelog/.env
-   # SMTP_PASS= 줄을 새 16자리로 교체 (공백 없이)
-   ```
-5. 컨테이너 재생성:
-   ```bash
-   cd /volume1/docker/drivelog
-   sudo docker-compose down
-   sudo docker-compose up -d
+   sudo vi /volume1/docker/drivelog/.env  # SMTP_PASS 교체
+   cd /volume1/docker/drivelog && sudo docker-compose down && sudo docker-compose up -d
    ```
 
-### 3. 보류된 결정 사항
+### 4. 🔍 잠재 버그 — admin이 RIDER 진입 차단 안 함
+검증 중 발견. RIDER가 admin URL에 직접 들어오면:
+- 사이드바: SUPER_ADMIN 메뉴가 보임 (`navGroups = isMaster ? master : superAdmin` — RIDER 케이스 없음)
+- 모든 라우트: RoleGuard에 막혀서 빈 화면 또는 무한 리다이렉트
+- App.jsx의 `RoleGuard`에서 `roles=[MASTER, SUPER_ADMIN]`이면 RIDER는 `<Navigate to="/" />` ← 자기 자신으로 redirect (무한 루프 회피는 라우터 동작에 의존)
+
+**패치 권장**: Login 응답에서 RIDER role 차단 (admin 로그인 자체 거부), 또는 App.jsx에서 RIDER면 즉시 강제 로그아웃 + 모바일 안내 메시지. 본 세션 작업 범위 외이므로 다음 세션 과제로.
+
+### 5. 🔍 잠재 버그 — 다른 라우트에도 datetime 처리 같은 버그 가능성
+mariadb 드라이버가 datetime을 string으로 반환하는 환경 → `created_at.toISOString()` 또는 `.getTime()` 같은 Date 메서드 호출하는 다른 라우트들에 잠재 버그 가능. 한 번 grep 권장:
+```bash
+cd /c/drivelog/drivelog-admin/server
+grep -rn "\.toISOString\|getTime\|getFullYear" routes/
+```
+찾은 라우트마다 string/Date 양쪽 안전 처리 적용.
+
+### 6. 보류된 결정 사항 (오전부터)
 - **개인정보 암호화 범위**: (가) 볼륨 암호화만 / (나) driver_license만 추가 / (다) 모든 PII
 - **비밀번호 정책 강화** (추후): 영문 대소문자 + 숫자 + 특수문자 8자 이상
 
-### 4. 미완 작업 (이전 세션부터)
+### 7. 미완 작업 (이전 세션부터)
 - **검증 데이터 정리** (운행 #1261, #1263, attendance id=1)
 - **rides PUT/DELETE 시 마일리지 보정** 처리
 - **콜 단계에서 마일리지 입력** (옵션)
 
 ---
 
-## 📦 변경 파일 종합 (이번 세션)
+## 📦 변경 파일 종합 (오전 + 오후 통합)
 
 ### 백엔드
 | 파일 | 변경 유형 | 내용 |
 |---|---|---|
-| `server/utils/mailer.js` | 신규 | Gmail SMTP 헬퍼 + 메일 템플릿 + 8자리 생성기 |
-| `server/db/migration_2026_04_09_password_reset.sql` | 신규 | 컬럼 2개 + ENUM 추가 |
-| `server/routes/publicRoutes.js` | 수정 | TRIAL→ACTIVE 버그 수정 + find-id, request-password-reset 라우트 추가 + 이메일 필수화 |
-| `server/routes/users.js` | 수정 | issue-temp-password 라우트 추가 |
-| `server/routes/auth.js` | 수정 | password_must_change 플래그 처리 |
-| `server/index.js` | 수정 | rate limit 2개 추가 |
-| `server/package.json` | 수정 | nodemailer 의존성 추가 |
+| `server/utils/mailer.js` | 신규 (오전) | Gmail SMTP 헬퍼 |
+| `server/db/migration_2026_04_09_password_reset.sql` | 신규 (오전) | 컬럼 2개 + ENUM |
+| `server/routes/publicRoutes.js` | 수정 (오전) | TRIAL→ACTIVE + find-id + request-password-reset + 이메일 필수화 |
+| `server/routes/publicRoutes.js` | **수정 (오후, 버그픽스)** | **find-id created_at 안전 처리** |
+| `server/routes/users.js` | 수정 (오전) | issue-temp-password 라우트 |
+| `server/routes/auth.js` | 수정 (오전) | password_must_change 플래그 |
+| `server/index.js` | 수정 (오전) | rate limit 2개 |
+| `server/package.json` | 수정 (오전) | nodemailer |
 
 ### 프론트
 | 파일 | 변경 유형 | 내용 |
 |---|---|---|
-| `client/src/api/client.js` | 수정 | API 함수 3개 추가 |
-| `client/src/pages/Login.jsx` | 전면 재작성 | 업체코드 선택입력 + 모달 2개 |
-| `client/src/pages/Register.jsx` | 수정 | 이메일 필수화 |
-| `client/src/App.jsx` | 수정 | forced 모드 PasswordModal |
-| `client/src/pages/Users.jsx` | 수정 | 임시비번 버튼 + 결과 모달 |
+| `client/src/api/client.js` | 수정 (오전) | API 함수 3개 |
+| `client/src/pages/Login.jsx` | 전면 재작성 (오전) | 업체코드 선택입력 + 모달 2개 |
+| `client/src/pages/Register.jsx` | 수정 (오전) | 이메일 필수 |
+| `client/src/App.jsx` | 수정 (오전) | forced 모드 PasswordModal |
+| `client/src/App.jsx` | **수정 (오후, 버그픽스)** | **useEffect deps `[]` → `[user]`** |
+| `client/src/pages/Users.jsx` | 수정 (오전) | 🔑 임시비번 버튼 + 결과 모달 |
+| `client/src/pages/Users.jsx` | **수정 (오후)** | **이메일 수정 필드 추가 (5곳 패치)** |
 
 ### 인프라
 | 파일 | 변경 유형 | 내용 |
 |---|---|---|
-| `drivelog-admin/docker-compose.yml` (로컬) | 수정 | NAS 정상 버전과 동기화 + 경고 주석 |
-| `package.json` (루트) | 수정 | deploy:server에 utils 추가, models 제거 |
-| `/volume1/docker/drivelog/docker-compose.yml` (NAS) | 수정 | volumes 섹션 복구 + SMTP env 5개 |
-| `/volume1/docker/drivelog/.env` (NAS) | 수정 | SMTP 환경변수 5개 추가 |
+| `drivelog-admin/docker-compose.yml` (로컬) | 수정 (오전) | NAS 정상본 동기화 + 경고 주석 |
+| `package.json` (루트) | 수정 (오전) | deploy:server에 utils 추가 |
+| `/volume1/docker/drivelog/docker-compose.yml` (NAS) | 수정 (오전) | volumes 복구 + SMTP env |
+| `/volume1/docker/drivelog/.env` (NAS) | 수정 (오전) | SMTP 5개 |
 
-### 백업
-- `backup/publicRoutes_20260409_1050.js`
-- `backup/publicRoutes_20260409_1130.js`
-- `backup/BACKUP_README_20260409_1130.md`
-- `backup/users_20260409_1130_summary.js`
-- NAS: `docker-compose.yml.backup_20260409`, `docker-compose.yml.before_volumes_fix`, `docker-compose.yml.backup_*` (timestamp)
+### 백업 (오후 추가분)
+- `backup/Users_jsx_20260410_1430.jsx` — 이메일 필드 추가 직전 원본
+- `backup/session_2026_04_10_summary_20260410_1100.md` — 오전 작업본 요약 보존
+
+(오전 백업은 별도 보존 — `backup/publicRoutes_20260409_*.js` 등)
 
 ---
 
-## 🐛 이번 세션에서 디버깅한 이슈 (학습용)
+## 🐛 디버깅 이슈 모음 (학습용)
 
-### 1. companies.status ENUM 제약
-- **교훈**: ENUM 컬럼에 새 값을 INSERT할 땐 반드시 ENUM 정의를 먼저 확인. ERD 문서에 적힌 값이 실제 DB와 일치하는지 마이그레이션 후 검증 필요.
-- **에러 패턴**: `Data truncated for column 'X'` → ENUM 또는 길이 제약 위반
+### [오전] 1. companies.status ENUM 제약
+ENUM 컬럼에 새 값 INSERT할 땐 ENUM 정의 먼저 확인. 에러 패턴 `Data truncated for column 'X'`.
 
-### 2. docker-compose.yml의 volumes 섹션 누락
-- **교훈**: docker-compose.yml은 들여쓰기가 매우 민감하고, `restart: always` 다음에 `environment:`로 바로 가는 건 정상이지만 `volumes:`가 빠져있으면 이미지에 박힌 코드만 실행됨.
-- **진단법**: `docker inspect <container> | grep -A 10 '"Mounts"'`로 마운트 확인. 비어있으면 즉시 의심.
-- **검증법**: `sudo docker exec <container> stat /app/index.js` vs `sudo stat /volume1/docker/drivelog/server/index.js` — Size와 Modify 비교
+### [오전] 2. docker-compose.yml volumes 누락
+- 진단: `docker inspect <container> | grep -A 10 '"Mounts"'` 비어있으면 즉시 의심
+- 검증: `docker exec stat /app/index.js` vs 호스트 파일 stat 비교
+- restart: always 다음에 environment로 바로 가는 건 정상이지만 volumes가 빠지면 이미지 박힌 코드가 실행됨
 
-### 3. deploy:server 스크립트 누락 폴더
-- **교훈**: 새 폴더 추가 시 (예: utils/) 루트 `package.json`의 deploy:server scp 대상 목록에도 반드시 추가
-- **진단법**: NAS에서 `ls /volume1/docker/drivelog/server/` 했을 때 새 폴더 없으면 deploy 누락
+### [오전] 3. deploy:server 누락 폴더
+- 새 폴더 추가 시 (utils/) 루트 package.json의 deploy:server scp 대상에도 반드시 추가
+- NAS에서 `ls server/` 했을 때 새 폴더 없으면 deploy 누락
 
-### 4. 환경변수 vs .env 주입 방식
-- **교훈**: docker-compose에서 `.env` 파일은 yml 내부 `${VAR}` 치환에만 쓰임. 컨테이너 안에 환경변수로 주입하려면 yml의 `environment:` 또는 `env_file:`에 명시해야 함.
-- 사장님 시스템: `${SMTP_HOST}` 같은 변수가 yml에 명시되어 있어야 .env 값이 컨테이너로 전달됨
+### [오전] 4. 환경변수 vs .env 주입
+- docker-compose에서 `.env` 파일은 yml의 `${VAR}` 치환에만 쓰임
+- 컨테이너에 환경변수로 주입하려면 yml `environment:` 또는 `env_file:`에 명시
+- environment 변경 후엔 `restart` 아니라 반드시 `down → up -d`
 
-### 5. docker-compose restart vs up --force-recreate
-- **교훈**: `restart`는 컨테이너만 재시작하므로 environment 변경사항이 안 들어감. environment를 바꿨으면 반드시 `down → up -d` 또는 `up -d --force-recreate`
+### [오전] 5. MCP filesystem 백업 전략
+edit_file로 부분 수정하면 git diff로 추적 가능 → 별도 백업 적게 필요. write_file로 통째 덮어쓰기 전엔 read_text_file로 원본 확보 후 backup 폴더 복사.
 
-### 6. MCP filesystem 사용 시 백업 전략
-- **교훈**: edit_file로 부분 수정하면 git diff로 변경 추적 가능 → 별도 백업 파일 만들 필요 적음. write_file로 통째 덮어쓰기 전엔 read_text_file로 원본 확보 후 backup 폴더에 복사.
+### [오후] 6. mariadb 드라이버 datetime 반환 타입 가변
+- mariadb/mysql 드라이버는 옵션에 따라 datetime을 Date 객체 또는 string으로 반환
+- `r.created_at.toISOString()` 같은 Date 메서드 호출 전 항상 타입 체크
+- 안전 패턴:
+  ```js
+  if (typeof v === 'string') ...
+  else if (v instanceof Date) v.toISOString()
+  ```
+
+### [오후] 7. React useEffect deps `[]` 함정
+- Login 후 setUser → user state만 바뀌면 App 컴포넌트는 unmount/remount 안 됨
+- `useEffect(() => {}, [])`는 첫 마운트에서만 동작 → user 변화에 반응 못 함
+- 로그인 후 즉시 처리할 로직(자동 모달 등)은 항상 `[user]` 또는 `[user?.특정필드]` 포함
+
+### [오후] 8. SUPER_ADMIN의 "기사관리" = MASTER의 "계정관리" (같은 컴포넌트)
+- `/users` 한 라우트에 `<Users />` 단일 매핑
+- 사이드바 라벨만 navGroups에서 다르게 표시 ("기사관리" vs "계정관리")
+- → 한 컴포넌트 패치로 두 화면 동시 커버됨 (확인 필수)
+
+### [오후] 9. 검증 작업의 부작용 — 사용자 비번 변경
+- `request-password-reset`/`issue-temp-password` API 직접 호출하면 진짜로 비번이 임시비번으로 바뀜 + 메일 발송됨
+- password_history 정책(최근 3개 재사용 금지) 때문에 원래 비번으로 즉시 복구 불가
+- 검증 시작 전 영향받을 계정의 원래 비번 복구 경로(SQL DELETE 등) 미리 계획해 둘 것
 
 ---
 
 ## 💡 핵심 학습 / 패턴
 
 ### 디버깅 패턴
-- **로그가 옛날 에러와 새 에러를 섞어서 보여주는 함정**: `docker logs --tail N`은 시간순 마지막 N줄. 재시작 사이클이 있으면 죽음+부활이 같은 화면에 나옴. `--since 1m`로 최근만 확인.
 - **컨테이너 진단 3종**: `docker ps` (살아있나) + `docker inspect | grep Mounts` (마운트) + `docker exec env | grep KEY` (환경변수)
+- **로그 함정**: `docker logs --tail N`은 시간순 마지막 N줄. 재시작 사이클 있으면 죽음+부활이 섞임. `--since 1m` 권장.
+- **500 에러는 '매칭 실패' 아님**: 200 + found:false vs 500을 구분. 500은 거의 항상 코드/SQL 예외. catch 블록의 console.error 메시지를 NAS 로그에서 확인할 것.
+
+### 검증 패턴 (이번 세션에서 새로 정립)
+- **e2e 검증 때 비파괴 → 파괴 순서로**: 먼저 GET, UI 표시, API 응답 형식 확인 → 그다음 PUT/POST 같은 상태 변경
+- **검증 대상 계정의 원상태 복구 경로 미리 확보**: 비번 검증은 password_history 충돌 가능성, 데이터 변경은 백업 SQL 등
+- **JS 직접 호출 검증**: 정확한 클릭 좌표가 어긋나면 fetch 직접 호출이 더 빠르고 안정. localStorage 토큰 주입으로 로그인도 가능 (개발/검증용)
 
 ### 보안 패턴
-- 채팅에 평문으로 보낸 비밀번호는 즉시 폐기/재발급
-- 이메일 발송 결과를 사용자에게 일관되게 응답 (계정 존재 여부 노출 방지)
-- 임시비번 만료(10분) + 사용 후 강제 변경 + audit_logs 기록
+- 채팅에 평문 비밀번호 보내면 즉시 폐기/재발급 (Gmail 앱 비밀번호 미해결!)
+- 이메일 발송 결과를 사용자에게 일관 응답 (계정 존재 노출 방지)
+- 임시비번: 짧은 만료 + 강제 변경 + audit_logs 기록
 
 ### 코드 패턴
-- **트랜잭션 + 메일 발송 분리**: DB commit 후 메일 발송. 메일 실패해도 DB는 commit 상태 유지 → 사용자가 다시 요청 가능
-- **graceful degradation**: nodemailer 없어도 require try-catch로 서버 안 죽음
-- **마스킹 함수 재사용**: maskLoginId, maskEmail을 publicRoutes.js 상단에 분리
+- **트랜잭션 + 메일 분리**: DB commit 후 메일 발송. 메일 실패해도 DB는 commit (재요청 가능)
+- **graceful degradation**: nodemailer 없어도 try-catch로 서버 안 죽음
+- **datetime 안전 처리**: string/Date 양쪽 처리 (드라이버 옵션 의존성 회피)
 
 ---
 
 ## 📋 다음 세션 시작용 첫 메시지 (추천)
 
 ```
-DriveLog 비밀번호 찾기 / 아이디 찾기 시스템 검증.
+DriveLog 비번찾기 시스템 마무리 + 잠재 버그 정리.
 
 먼저 아래 문서들 읽고 컨텍스트 파악해줘:
 - C:\Drivelog\CLAUDE_SESSION_GUIDE.md
 - C:\Drivelog\session_2026_04_10_summary.md
-- C:\Drivelog\smtp_password_reset_design.md (SMTP 설계 문서)
+- C:\Drivelog\smtp_password_reset_design.md
 
 오늘 작업:
-1. 브라우저에서 비밀번호 찾기 / 아이디 찾기 / 임시비번 발급 동작 검증
-2. (검증 끝나면) Gmail 앱 비밀번호 폐기/재발급
-3. (선택) 개인정보 암호화 범위 결정
-4. (선택) 이전 세션 미완 작업 - 검증 데이터 정리, rides PUT/DELETE 마일리지 보정
+1. App.jsx 패치 배포 (npm run deploy:admin) — useEffect deps 버그픽스
+2. cblim 본인 계정 비번찾기 흐름 e2e 검증 (사장님 직접)
+3. (선택) test 계정 11223344 복구
+4. (선택) Gmail 앱 비밀번호 폐기/재발급 — 보안
+5. (선택) datetime 처리 잠재 버그 grep 점검
+6. (선택) admin RIDER 진입 차단 패치
+7. (선택) 개인정보 암호화 범위 결정 + 비번 정책 강화
 ```
 
 ---
@@ -300,10 +392,19 @@ DriveLog 비밀번호 찾기 / 아이디 찾기 시스템 검증.
 | 마일리지 보유 고객 | 232명 (총 약 1,509,000원) |
 | API 버전 | v2.6 |
 
+### 주요 테스트 계정 (양양대리, company_code 1012)
+
+| 역할 | login_id | 비밀번호 | 이메일 | 비고 |
+|---|---|---|---|---|
+| MASTER | admin | Admin123! | - | 시스템 관리자 |
+| SUPER_ADMIN | cblim | 11223344 | rnfkehdrn@naver.com | 임창빈, user_id=8 |
+| RIDER | test | **Test1234!** | dwlee7788@naver.com | 테스트, user_id=51, 검증 후 변경됨 |
+| RIDER | rider_son | Admin123! | - | 손영록 (이전 세션) |
+
 ---
 
-**작성**: 2026-04-10 오전
-**다음 마일스톤**: SMTP 비번찾기 시스템 동작 검증 + Gmail 앱 비번 재발급
+**작성**: 2026-04-10 통합본 (오전 + 오후)
+**다음 마일스톤**: App.jsx 패치 배포 + cblim 본인 비번찾기 e2e 검증
 **API 버전**: v2.6
-**컨테이너 상태**: drivelog-api healthy, mailer.js 정상 로드, DB 마이그레이션 완료
-</content>
+**컨테이너 상태**: drivelog-api healthy, find-id 버그 수정 배포 완료, mailer.js 정상 발송 확인
+**대기 중인 클라이언트 배포**: App.jsx useEffect deps 패치 (`npm run deploy:admin`)
