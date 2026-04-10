@@ -1,0 +1,45 @@
+-- ============================================================
+-- DriveLog Migration: PII Encryption Column Length Expansion
+-- Date: 2026-04-10
+-- Status: 작성 완료, 실행 대기 (PHASE2 작업 보류 중)
+-- Original: drivelog-admin/server/db/migration_2026_04_10_pii_encryption.sql
+-- ============================================================
+--
+-- ⚠️ 이 파일은 2026-04-10 백업본입니다.
+-- 실제 운영 마이그레이션 파일은 다음 경로에 있습니다:
+--   C:\Drivelog\drivelog-admin\server\db\migration_2026_04_10_pii_encryption.sql
+--
+-- 이 백업본은 작업 재개 시 참조용으로만 사용.
+--
+-- 내용 요약:
+--   - 12개 컬럼을 VARCHAR(255)로 확장
+--   - NOT NULL 제약 보존 (users.name/phone, customers.name)
+--   - 멱등성: 이미 255 이상이면 ALTER 스킵
+--
+-- 대상 테이블/컬럼:
+--   users.name           VARCHAR(50)  → VARCHAR(255)  NOT NULL
+--   users.phone          VARCHAR(20)  → VARCHAR(255)  NOT NULL
+--   users.email          VARCHAR(100) → VARCHAR(255)  NULL
+--   users.driver_license VARCHAR(30)  → VARCHAR(255)  NULL
+--   customers.name       VARCHAR(50)  → VARCHAR(255)  NOT NULL
+--   customers.phone      VARCHAR(20)  → VARCHAR(255)  NULL
+--   customers.email      VARCHAR(100) → VARCHAR(255)  NULL
+--   companies.ceo_name   VARCHAR(50)  → VARCHAR(255)  NULL
+--   companies.phone      VARCHAR(20)  → VARCHAR(255)  NULL
+--   companies.email      VARCHAR(100) → VARCHAR(255)  NULL
+--   partner_companies.contact_person VARCHAR(50) → VARCHAR(255) NULL
+--   partner_companies.phone          VARCHAR(20) → VARCHAR(255) NULL
+--
+-- 제외:
+--   - customers.address (이번 단계 제외)
+--   - companies.business_number, address, company_name (PII 아님)
+--   - users.vehicle_number (공개정보)
+--   - manual_gps_points.lat/lng (위치정보보호법 별도)
+--
+-- 실행 전 필수:
+--   sudo docker exec drivelog-db mysqldump -uroot -p'Drivelog12!@' \
+--     drivelog_db users customers companies partner_companies \
+--     > /volume1/docker/drivelog/backup/pii_backup_$(date +%Y%m%d_%H%M).sql
+--
+-- 실제 실행 방법은 원본 파일 참조.
+-- ============================================================

@@ -75,11 +75,10 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME}
-      # PII Encryption (2026-04-10 작업 보류 중 — 재개 시 아래 주석 해제)
+      # PII Encryption (2026-04-10 추가)
       # ⚠️ PII_ENC_KEY 분실 시 암호화된 데이터 영구 복구 불가
       # 64자 hex (32바이트). 별도 안전한 곳에 백업 필수.
-      # .env 에 PII_ENC_KEY=... 먼저 추가 후 주석 해제할 것
-      # PII_ENC_KEY: ${PII_ENC_KEY}
+      PII_ENC_KEY: ${PII_ENC_KEY}
     ports:
       - "3001:3001"
     depends_on:
