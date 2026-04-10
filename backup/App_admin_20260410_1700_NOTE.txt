@@ -1,0 +1,63 @@
+import { useState, useEffect } from 'react';
+import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import MasterDashboard from './pages/MasterDashboard';
+import Rides from './pages/Rides';
+import Partners from './pages/Partners';
+import Mileage from './pages/Mileage';
+import Users from './pages/Users';
+import Customers from './pages/Customers';
+import PartnerManage from './pages/PartnerManage';
+import Settlements from './pages/Settlements';
+import FarePolicies from './pages/FarePolicies';
+import Billing from './pages/Billing';
+import Companies from './pages/Companies';
+import PaymentTypes from './pages/PaymentTypes';
+import Permissions from './pages/Permissions';
+import SystemSettings from './pages/SystemSettings';
+import Inquiries from './pages/Inquiries';
+import MyInquiries from './pages/MyInquiries';
+import CallManage from './pages/CallManage';
+import Reports from './pages/Reports';
+import FareSettlement from './pages/FareSettlement';
+import Attendance from './pages/Attendance';
+import { logout as apiLogout, createInquiry, changePassword, getMe } from './api/client';
+
+const ADMIN_VERSION = __BUILD_TIME__ || 'dev';
+
+const masterNavGroups = [
+  { title: '시스템 현황', items: [{ path: '/', label: '대시보드', icon: '📊' }, { path: '/reports', label: '월간리포트', icon: '📈' }, { path: '/inquiries', label: '문의사항', icon: '📩' }]},
+  { title: '업체 관리', items: [{ path: '/companies', label: '업체관리', icon: '🏢' }, { path: '/billing', label: '사용료/과금', icon: '🧾' }]},
+  { title: '업체 데이터 조회', items: [{ path: '/rides', label: '운행일지', icon: '🚗' }, { path: '/partners', label: '제휴업체 콜', icon: '📞' }, { path: '/settlements', label: '정산관리', icon: '💰' }, { path: '/mileage', label: '마일리지', icon: '⭐' }]},
+  { title: '시스템 설정', items: [{ path: '/users', label: '계정관리', icon: '👥' }, { path: '/permissions', label: '통합권한관리', icon: '🔐' }, { path: '/payment-types', label: '결제구분', icon: '💳' }, { path: '/fare-policies', label: '요금정책', icon: '💵' }, { path: '/system-settings', label: '시스템 설정', icon: '⚙️' }]},
+];
+const superAdminNavGroups = [
+  { title: '대시보드', items: [{ path: '/', label: '대시보드', icon: '📊' }, { path: '/reports', label: '월간리포트', icon: '📈' }]},
+  { title: '운행', items: [{ path: '/calls', label: '콜 관리', icon: '📞' }, { path: '/rides', label: '운행일지', icon: '🚗' }, { path: '/partners', label: '제휴업체 콜', icon: '🏢' }, { path: '/mileage', label: '마일리지', icon: '⭐' }]},
+  { title: '정산', items: [{ path: '/settlements', label: '정산관리', icon: '💰' }, { path: '/fare-settlement', label: '운임 정산', icon: '💵' }, { path: '/attendance', label: '근무시간', icon: '🕐' }, { path: '/fare-policies', label: '요금설정', icon: '💵' }, { path: '/billing', label: '사용료', icon: '🧾' }]},
+  { title: '관리', items: [{ path: '/users', label: '기사관리', icon: '🚘' }, { path: '/customers', label: '고객관리', icon: '👤' }, { path: '/partner-manage', label: '제휴업체관리', icon: '🤝' }, { path: '/payment-types', label: '결제구분', icon: '💳' }, { path: '/my-inquiries', label: '문의하기', icon: '📩' }]},
+];
+
+// 기사수 초과 시 접근 가능한 경로
+const RIDER_EXCEEDED_ALLOWED = ['/users', '/billing', '/my-inquiries'];
+
+function RoleGuard({ user, roles, children }) { if (!user) return <Navigate to="/login" />; if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />; return children; }
+
+function InquiryModal({ onClose }) {
+  // (원본과 동일 — 생략)
+}
+
+function PasswordModal({ onClose, forced }) {
+  // (원본과 동일 — 생략)
+}
+
+// (이하 원본과 동일 — ExpiredOverlay, RiderExceededOverlay, ExpiringBanner, RiderExceededBanner, App 본체)
+//
+// 백업 본 — 원본 전체는 git 또는 동시에 저장된 다른 백업 파일 참조
+// 백업 시각: 2026-04-10 17:00
+// 변경 사유: admin web에서 RIDER 진입 시 무한 redirect/sidebar 깨짐 방지
+// 변경 내용:
+//   - useEffect에서 user 로드 후 user.role === 'RIDER'이면 자동 logout 처리 + 안내 alert
+//   - (안전망 — Login.jsx에서 1차 차단 후, 만약 localStorage에 RIDER user가 남아있어도 여기서 차단)

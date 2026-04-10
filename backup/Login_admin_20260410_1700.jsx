@@ -194,16 +194,6 @@ export default function Login({ onLogin, onRegister }) {
     setError(''); setLoading(true);
     try {
       const data = await login(loginForm);
-      // RIDER 차단 — admin web은 사장님/관리자 전용. RIDER는 모바일 PWA(/m/) 사용
-      // 토큰/유저 저장 전에 막아야 무한 redirect 및 사이드바 깨짐 방지
-      if (data?.user?.role === 'RIDER') {
-        // 자동로그인이 켜져 있었다면 해제 (다음에 또 자동 시도되지 않도록)
-        localStorage.removeItem('autoLogin_admin');
-        localStorage.removeItem('savedPw_admin');
-        setError('기사(운행기사) 계정은 관리자 페이지에 접속할 수 없습니다. 모바일 앱(/m/)으로 접속해주세요.');
-        setLoading(false);
-        return;
-      }
       localStorage.setItem('accessToken', data.accessToken);
       localStorage.setItem('refreshToken', data.refreshToken);
       localStorage.setItem('user', JSON.stringify(data.user));

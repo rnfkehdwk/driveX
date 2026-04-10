@@ -57,7 +57,6 @@ function PasswordModal({ onClose, forced }) {
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
   const is = { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box' };
   const handleSubmit = async () => { setError(''); if (!form.current_password || !form.new_password) { setError('모든 항목 입력'); return; } if (form.new_password.length < 8) { setError('8자 이상'); return; } if (form.new_password !== form.confirm) { setError('불일치'); return; } setSaving(true); try { await changePassword({ current_password: form.current_password, new_password: form.new_password }); alert('변경 완료. 재로그인하세요.'); localStorage.clear(); window.location.href = '/admin/login'; } catch (err) { setError(err.response?.data?.error || '실패'); } finally { setSaving(false); } };
-  // 강제 변경 모드일 때는 배경 클릭/취소 명령 차단
   const handleBackdropClick = (e) => { if (!forced) onClose(); };
   return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={handleBackdropClick}><div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, maxWidth: 440, width: '100%' }}>
     <div style={{ fontSize: 18, fontWeight: 800, marginBottom: forced ? 8 : 20 }}>🔑 {forced ? '임시 비밀번호로 로그인하셨습니다' : '비밀번호 변경'}</div>
@@ -144,23 +143,9 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      // 안전망: localStorage에 RIDER user가 남아있다면 즉시 로그아웃
-      // (Login.jsx에서 1차 차단되지만, 이전 세션 잔여물 명 대응)
-      if (user.role === 'RIDER') {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user');
-        localStorage.removeItem('autoLogin_admin');
-        localStorage.removeItem('savedPw_admin');
-        setUser(null);
-        alert('기사 계정은 관리자 페이지를 이용할 수 없습니다. 모바일 앱(/m/)으로 접속해주세요.');
-        navigate('/login');
-        return;
-      }
       fetch('/api/health').then(r => r.json()).then(d => setApiVersion(d.version || '?')).catch(() => setApiVersion('?'));
       if (user.license_expired) setShowExpiredPopup(true);
       else if (user.rider_exceeded) setShowRiderExceededPopup(true);
-      // 임시비번으로 로그인한 경우 강제 변경 모달
       if (user.password_must_change) {
         setForcePwChange(true);
         setShowPwModal(true);
