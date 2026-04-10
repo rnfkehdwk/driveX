@@ -42,6 +42,9 @@ const limiter = rateLimit({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS 
 app.use('/api/', limiter);
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: '로그인 시도가 너무 많습니다.' } }));
 app.use('/api/public/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { error: '가입 시도가 너무 많습니다.' } }));
+// 비밀번호 찾기 및 아이디 찾기 rate limit (시간당 5회/IP)
+app.use('/api/public/find-id', rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: { error: '아이디 찾기 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.' } }));
+app.use('/api/public/request-password-reset', rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: { error: '비밀번호 찾기 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' } }));
 
 app.use('/api/public', publicRoutes);
 app.use('/api/auth', authRoutes);

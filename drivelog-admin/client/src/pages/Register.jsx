@@ -26,9 +26,10 @@ export default function Register({ onBack }) {
   }, [form.admin_login_id]);
 
   const handleSubmit = async () => {
-    if (!form.company_name || !form.ceo_name || !form.phone || !form.admin_name || !form.admin_login_id || !form.admin_password) {
-      alert('필수 항목을 모두 입력해주세요.'); return;
+    if (!form.company_name || !form.ceo_name || !form.phone || !form.email || !form.admin_name || !form.admin_login_id || !form.admin_password) {
+      alert('필수 항목을 모두 입력해주세요. (이메일 포함)'); return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) { alert('올바른 이메일 형식이 아닙니다.'); return; }
     if (form.admin_password !== form.admin_password_confirm) { alert('비밀번호가 일치하지 않습니다.'); return; }
     if (form.admin_password.length < 8) { alert('비밀번호는 8자 이상이어야 합니다.'); return; }
     if (idAvail === false) { alert('이미 사용 중인 로그인 ID입니다.'); return; }
@@ -92,8 +93,9 @@ export default function Register({ onBack }) {
             <input value={form.phone} onChange={set('phone')} placeholder="010-1234-5678" style={inputStyle} />
           </div>
           <div>
-            <label style={labelStyle}>이메일</label>
+            <label style={labelStyle}>이메일 *</label>
             <input value={form.email} onChange={set('email')} placeholder="yang@example.com" style={inputStyle} />
+            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>비밀번호 찾기 시 임시비번을 받을 주소입니다</div>
           </div>
           <div>
             <label style={labelStyle}>사업자번호</label>

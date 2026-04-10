@@ -18,7 +18,7 @@ export default function Users() {
   const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ login_id: '', password: '', name: '', phone: '', email: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' });
+  const [form, setForm] = useState({ login_id: '', password: '', name: '', phone: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' });
   const [saving, setSaving] = useState(false);
   const [masterCount, setMasterCount] = useState({ count: 0, max: 3 });
   const [riderLimit, setRiderLimit] = useState({ current: 0, max: 0, free_riders: 0, plan_name: '-' });
@@ -39,8 +39,8 @@ export default function Users() {
   const masterFull = masterCount.count >= masterCount.max;
   const riderFull = riderLimit.max > 0 && riderLimit.current >= riderLimit.max;
 
-  const openNew = () => { setEditing(null); setForm({ login_id: '', password: '', name: '', phone: '', email: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' }); setModal(true); };
-  const openEdit = (u) => { setEditing(u); setForm({ login_id: u.login_id, name: u.name, phone: u.phone, email: u.email || '', role: u.role, vehicle_number: u.vehicle_number || '', vehicle_type: u.vehicle_type || '', password: '', company_id: u.company_id || '' }); setModal(true); };
+  const openNew = () => { setEditing(null); setForm({ login_id: '', password: '', name: '', phone: '', role: 'RIDER', vehicle_number: '', vehicle_type: '', company_id: '' }); setModal(true); };
+  const openEdit = (u) => { setEditing(u); setForm({ login_id: u.login_id, name: u.name, phone: u.phone, role: u.role, vehicle_number: u.vehicle_number || '', vehicle_type: u.vehicle_type || '', password: '', company_id: u.company_id || '' }); setModal(true); };
 
   const handleSave = async () => {
     if (!form.name || !form.phone) { alert('이름과 연락처는 필수입니다.'); return; }
@@ -48,16 +48,12 @@ export default function Users() {
     setSaving(true);
     try {
       if (editing) {
-        // 이메일 형식 검증 (입력했을 때만)
-        if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) { alert('이메일 형식이 올바르지 않습니다.'); setSaving(false); return; }
-        const body = { name: form.name, phone: form.phone, email: form.email || null, vehicle_number: form.vehicle_number, vehicle_type: form.vehicle_type, role: form.role };
+        const body = { name: form.name, phone: form.phone, vehicle_number: form.vehicle_number, vehicle_type: form.vehicle_type, role: form.role };
         if (isMaster && form.role !== 'MASTER') body.company_id = form.company_id;
         await updateUser(editing.user_id, body);
       } else {
         if (!form.login_id || !form.password) { alert('ID와 비밀번호는 필수입니다.'); setSaving(false); return; }
-        if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) { alert('이메일 형식이 올바르지 않습니다.'); setSaving(false); return; }
         const body = { ...form };
-        if (!body.email) delete body.email;
         if (form.role === 'MASTER') delete body.company_id;
         await createUser(body);
       }
@@ -206,7 +202,7 @@ export default function Users() {
               </div>
             )}
 
-            {[{ k: 'name', label: '이름 *', ph: '홍길동' }, { k: 'phone', label: '연락처 *', ph: '010-1234-5678' }, { k: 'email', label: '이메일 (비밀번호 찾기용)', ph: 'example@gmail.com', type: 'email' }, ...(!editing ? [{ k: 'login_id', label: '로그인 ID *', ph: 'rider_hong' }, { k: 'password', label: '비밀번호 *', ph: '비밀번호 (8자 이상)', type: 'password' }] : []), { k: 'vehicle_number', label: '차량번호', ph: '서울 12가 3456' }, { k: 'vehicle_type', label: '차종', ph: '소나타' }].map(f => (
+            {[{ k: 'name', label: '이름 *', ph: '홍길동' }, { k: 'phone', label: '연락처 *', ph: '010-1234-5678' }, ...(!editing ? [{ k: 'login_id', label: '로그인 ID *', ph: 'rider_hong' }, { k: 'password', label: '비밀번호 *', ph: '비밀번호 (8자 이상)', type: 'password' }] : []), { k: 'vehicle_number', label: '차량번호', ph: '서울 12가 3456' }, { k: 'vehicle_type', label: '차종', ph: '소나타' }].map(f => (
               <div key={f.k} style={{ marginBottom: 12 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.label}</label><input type={f.type || 'text'} value={form[f.k] || ''} onChange={e => setForm(p => ({ ...p, [f.k]: e.target.value }))} placeholder={f.ph} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none' }} /></div>
             ))}
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>

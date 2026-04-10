@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { pool } = require('../config/database');
 const { authenticate, authorize, checkLicense } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
+const { generateTempPassword, sendTempPasswordMail } = require('../utils/mailer');
 
 router.get('/', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, res) => {
   try {
@@ -113,6 +114,75 @@ router.put('/:id/reset-password', authenticate, authorize('MASTER', 'SUPER_ADMIN
   } catch (err) {
     console.error('PUT /users/:id/reset-password error:', err);
     res.status(500).json({ error: '비밀번호 초기화에 실패했습니다.' });
+  }
+});
+
+// ─── POST /api/users/:id/issue-temp-password — 임시비번 자동 발급 (MASTER + SUPER_ADMIN) ───
+// 8자리 자동 생성 + DB 저장 + password_must_change=TRUE 설정
+// 이메일 있으면 자동 발송, 없으면 화면에 표시 (관리자가 직접 사용자에게 전달)
+router.post('/:id/issue-temp-password', authenticate, authorize('MASTER', 'SUPER_ADMIN'), async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const targetId = parseInt(req.params.id);
+
+    const [users] = await conn.execute('SELECT user_id, login_id, name, email, company_id FROM users WHERE user_id = ?', [targetId]);
+    if (users.length === 0) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
+    const target = users[0];
+
+    // SUPER_ADMIN은 자기 업체 소속만
+    if (req.user.role === 'SUPER_ADMIN' && target.company_id !== req.user.company_id) {
+      return res.status(403).json({ error: '다른 업체의 계정은 처리할 수 없습니다.' });
+    }
+
+    // 8자리 임시비번 생성
+    const tempPassword = generateTempPassword();
+    const rounds = parseInt(process.env.BCRYPT_ROUNDS || '12');
+    const hash = await bcrypt.hash(tempPassword, rounds);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10분
+
+    await conn.beginTransaction();
+    await conn.execute(
+      'UPDATE users SET password_hash = ?, password_must_change = TRUE, temp_password_expires_at = ?, login_fail_count = 0, locked_until = NULL WHERE user_id = ?',
+      [hash, expiresAt, targetId]
+    );
+    await conn.execute('INSERT INTO password_history (user_id, password_hash) VALUES (?, ?)', [targetId, hash]);
+    await conn.commit();
+
+    // 이메일 있으면 발송 시도
+    let emailSent = false;
+    let emailError = null;
+    if (target.email) {
+      const mailResult = await sendTempPasswordMail(target.email, target.name, target.login_id, tempPassword, 10);
+      emailSent = mailResult.ok;
+      if (!mailResult.ok) emailError = mailResult.error;
+    }
+
+    writeAuditLog({
+      company_id: target.company_id,
+      user_id: req.user.user_id,
+      action: 'TEMP_PASSWORD_ISSUE',
+      target_table: 'users',
+      target_id: targetId,
+      detail: { issued_for: target.login_id, email_sent: emailSent, has_email: !!target.email },
+      ip_address: req.ip
+    });
+
+    res.json({
+      message: `${target.name}(${target.login_id})의 임시 비밀번호가 발급되었습니다.`,
+      temp_password: tempPassword,
+      expires_in_minutes: 10,
+      has_email: !!target.email,
+      email_sent: emailSent,
+      email_error: emailError,
+      target_name: target.name,
+      target_login_id: target.login_id,
+    });
+  } catch (err) {
+    try { await conn.rollback(); } catch {}
+    console.error('POST /users/:id/issue-temp-password error:', err);
+    res.status(500).json({ error: '임시 비밀번호 발급에 실패했습니다.' });
+  } finally {
+    conn.release();
   }
 });
 

@@ -52,12 +52,28 @@ function InquiryModal({ onClose }) {
   return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, maxWidth: 440, width: '100%' }}><div style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>📩 문의</div><div style={{ marginBottom: 14 }}><select value={form.inquiry_type} onChange={e => setForm(f => ({ ...f, inquiry_type: e.target.value }))} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, background: 'white' }}><option value="RENEWAL">서비스 갱신</option><option value="UPGRADE">업그레이드</option><option value="DOWNGRADE">다운그레이드</option><option value="GENERAL">일반 문의</option><option value="BUG">버그 신고</option></select></div><div style={{ marginBottom: 14 }}><input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="제목" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} /></div><div style={{ marginBottom: 20 }}><textarea value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} rows={4} placeholder="내용" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} /></div><div style={{ display: 'flex', gap: 10 }}><button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>취소</button><button onClick={handleSubmit} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '전송 중...' : '보내기'}</button></div></div></div>);
 }
 
-function PasswordModal({ onClose }) {
+function PasswordModal({ onClose, forced }) {
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm: '' });
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
   const is = { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box' };
   const handleSubmit = async () => { setError(''); if (!form.current_password || !form.new_password) { setError('모든 항목 입력'); return; } if (form.new_password.length < 8) { setError('8자 이상'); return; } if (form.new_password !== form.confirm) { setError('불일치'); return; } setSaving(true); try { await changePassword({ current_password: form.current_password, new_password: form.new_password }); alert('변경 완료. 재로그인하세요.'); localStorage.clear(); window.location.href = '/admin/login'; } catch (err) { setError(err.response?.data?.error || '실패'); } finally { setSaving(false); } };
-  return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, maxWidth: 420, width: '100%' }}><div style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>🔑 비밀번호 변경</div>{[{ k: 'current_password', l: '현재 비밀번호' }, { k: 'new_password', l: '새 비밀번호 (8자 이상)' }, { k: 'confirm', l: '새 비밀번호 확인' }].map(f => (<div key={f.k} style={{ marginBottom: 14 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.l}</label><input type="password" value={form[f.k]} onChange={e => setForm(p => ({ ...p, [f.k]: e.target.value }))} style={is} /></div>))}{error && <div style={{ padding: '8px 12px', borderRadius: 8, background: '#fef2f2', color: '#dc2626', fontSize: 13, marginBottom: 12 }}>{error}</div>}<div style={{ display: 'flex', gap: 10 }}><button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>취소</button><button onClick={handleSubmit} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '변경 중...' : '변경'}</button></div></div></div>);
+  // 강제 변경 모드일 때는 배경 클릭/취소 명령 차단
+  const handleBackdropClick = (e) => { if (!forced) onClose(); };
+  return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={handleBackdropClick}><div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, maxWidth: 440, width: '100%' }}>
+    <div style={{ fontSize: 18, fontWeight: 800, marginBottom: forced ? 8 : 20 }}>🔑 {forced ? '임시 비밀번호로 로그인하셨습니다' : '비밀번호 변경'}</div>
+    {forced && (
+      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 12, color: '#991b1b', lineHeight: 1.7 }}>
+        보안을 위해 <strong>새 비밀번호로 변경 후에만</strong> 서비스를 이용하실 수 있습니다.<br />
+        임시 비밀번호는 10분 후 만료됩니다.
+      </div>
+    )}
+    {[{ k: 'current_password', l: forced ? '임시 비밀번호' : '현재 비밀번호' }, { k: 'new_password', l: '새 비밀번호 (8자 이상)' }, { k: 'confirm', l: '새 비밀번호 확인' }].map(f => (<div key={f.k} style={{ marginBottom: 14 }}><label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.l}</label><input type="password" value={form[f.k]} onChange={e => setForm(p => ({ ...p, [f.k]: e.target.value }))} style={is} /></div>))}
+    {error && <div style={{ padding: '8px 12px', borderRadius: 8, background: '#fef2f2', color: '#dc2626', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+    <div style={{ display: 'flex', gap: 10 }}>
+      {!forced && <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>취소</button>}
+      <button onClick={handleSubmit} disabled={saving} style={{ flex: forced ? 1 : 2, padding: 12, borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{saving ? '변경 중...' : '변경'}</button>
+    </div>
+  </div></div>);
 }
 
 function ExpiredOverlay({ user, onContact, onClose }) {
@@ -105,6 +121,7 @@ export default function App() {
   const [showRiderExceededPopup, setShowRiderExceededPopup] = useState(false);
   const [showInquiryModal, setShowInquiryModal] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
+  const [forcePwChange, setForcePwChange] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -130,6 +147,11 @@ export default function App() {
       fetch('/api/health').then(r => r.json()).then(d => setApiVersion(d.version || '?')).catch(() => setApiVersion('?'));
       if (user.license_expired) setShowExpiredPopup(true);
       else if (user.rider_exceeded) setShowRiderExceededPopup(true);
+      // 임시비번으로 로그인한 경우 강제 변경 모달
+      if (user.password_must_change) {
+        setForcePwChange(true);
+        setShowPwModal(true);
+      }
     }
   }, []);
 
@@ -153,7 +175,7 @@ export default function App() {
       {showExpiredPopup && <ExpiredOverlay user={user} onContact={() => { setShowExpiredPopup(false); setShowInquiryModal(true); }} onClose={() => setShowExpiredPopup(false)} />}
       {showRiderExceededPopup && !showExpiredPopup && <RiderExceededOverlay user={user} onGoUsers={() => { setShowRiderExceededPopup(false); navigate('/users'); }} onClose={() => setShowRiderExceededPopup(false)} />}
       {showInquiryModal && <InquiryModal onClose={() => setShowInquiryModal(false)} />}
-      {showPwModal && <PasswordModal onClose={() => setShowPwModal(false)} />}
+      {showPwModal && <PasswordModal forced={forcePwChange} onClose={() => { if (!forcePwChange) setShowPwModal(false); }} />}
       {user && (<>
         <header style={{ background: 'white', borderBottom: `2px solid ${isMaster ? '#ede9fe' : user?.license_expired ? '#fecaca' : isRiderExceeded ? '#fde68a' : '#e2e8f0'}`, padding: '0 16px', display: 'flex', alignItems: 'center', height: 56, position: 'sticky', top: 0, zIndex: 50 }}>
           <button onClick={() => setSidebarOpen(true)} style={{ width: 40, height: 40, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, marginRight: 12, flexShrink: 0 }}><div style={{ width: 20, height: 2, background: '#1e293b', borderRadius: 1 }} /><div style={{ width: 20, height: 2, background: '#1e293b', borderRadius: 1 }} /><div style={{ width: 20, height: 2, background: '#1e293b', borderRadius: 1 }} /></button>

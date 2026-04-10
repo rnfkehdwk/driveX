@@ -28,6 +28,12 @@ export const getMe = () => api.get('/auth/me').then(r => r.data);
 export const logout = () => api.post('/auth/logout').then(r => r.data);
 export const changePassword = (body) => api.put('/auth/change-password', body).then(r => r.data);
 
+// 아이디 찾기 / 비밀번호 찾기 (공개 엔드포인트 — 인증 불필요)
+export const findUserId = (body) => axios.post('/api/public/find-id', body).then(r => r.data);
+export const requestPasswordReset = (body) => axios.post('/api/public/request-password-reset', body).then(r => r.data);
+// MASTER/SUPER_ADMIN 임시비번 발급
+export const issueTempPassword = (userId) => api.post(`/users/${userId}/issue-temp-password`).then(r => r.data);
+
 export const fetchRides = (params) => api.get('/rides', { params }).then(r => r.data);
 export const createRide = (body) => api.post('/rides', body).then(r => r.data);
 export const updateRide = (id, body) => api.put(`/rides/${id}`, body).then(r => r.data);

@@ -4,13 +4,6 @@ version: '3.8'
 # 실행: docker-compose up -d
 # 종료: docker-compose down
 # 로그: docker-compose logs -f
-#
-# ⚠️ 중요: api 서비스의 volumes 섹션은 절대 삭제하지 말 것!
-#   - ./server:/app  → 호스트의 server 코드를 컨테이너에 마운트 (deploy:server 동작에 필수)
-#   - /app/node_modules → node_modules는 컨테이너 내부 볼륨 사용 (호스트와 분리)
-# 이 두 줄이 빠지면 컨테이너가 이미지에 박힌 옛날 코드를 실행하게 됩니다.
-#
-# 마지막 검증: 2026-04-09 (NAS 실 운영 환경 동기화)
 
 services:
   # ---- MariaDB ----
@@ -46,17 +39,12 @@ services:
       dockerfile: Dockerfile
     container_name: drivelog-api
     restart: always
-    volumes:
-      # ⚠️ 절대 삭제 금지! 호스트 server 코드 → 컨테이너 /app 마운트
-      - ./server:/app
-      # node_modules는 컨테이너 내부 볼륨 사용 (호스트와 분리)
-      - /app/node_modules
     environment:
       NODE_ENV: production
       PORT: 3001
       DB_HOST: db
       DB_PORT: 3306
-      DB_USER: sykim
+      DB_USER: drivelog
       DB_PASSWORD: ${DB_PASSWORD:-DriveLog_DB_2026!}
       DB_NAME: drivelog_db
       DB_CONNECTION_LIMIT: 20
@@ -69,12 +57,6 @@ services:
       LOGIN_LOCK_MINUTES: 30
       RATE_LIMIT_WINDOW_MS: 900000
       RATE_LIMIT_MAX: 200
-      # SMTP (Gmail) - 2026-04-09 추가
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
     ports:
       - "3001:3001"
     depends_on:

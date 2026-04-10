@@ -55,6 +55,10 @@ router.post('/login', async (req, res) => {
       if (lockUntil) return res.status(423).json({ error: `${maxAttempts}회 실패로 계정이 ${lockMinutes}분간 잠깁니다.` });
       return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.' });
     }
+    // 임시비번 만료 체크 (password_must_change=TRUE이면서 temp_password_expires_at이 과거인 경우)
+    if (user.password_must_change && user.temp_password_expires_at && new Date(user.temp_password_expires_at) < new Date()) {
+      return res.status(401).json({ error: '임시 비밀번호가 만료되었습니다. 다시 비밀번호 찾기를 요청해주세요.' });
+    }
     await pool.execute('UPDATE users SET login_fail_count = 0, locked_until = NULL, last_login_at = NOW() WHERE user_id = ?', [user.user_id]);
     const payload = { user_id: user.user_id, company_id: user.company_id, role: user.role, name: user.name };
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_ACCESS_EXPIRES || '15m' });
@@ -87,6 +91,9 @@ router.post('/login', async (req, res) => {
       license_expires: licenseExpiresDate, license_expired: licenseExpired,
       license_type: user.license_type, plan_id: user.plan_id, plan_name: user.plan_name,
       rider_exceeded: riderExceeded, rider_current: riderCurrent, rider_max: riderMax,
+      // 임시비번 강제 변경 플래그
+      password_must_change: !!user.password_must_change,
+      temp_password_expires_at: user.temp_password_expires_at || null,
     };
     if (user.company_status === 'TRIAL' && user.trial_expires_at) { responseUser.trial_expires_at = user.trial_expires_at; responseUser.is_trial = true; }
     res.json({ accessToken, refreshToken, user: responseUser });
@@ -153,7 +160,8 @@ router.put('/change-password', authenticate, async (req, res) => {
     for (const h of history) { if (await bcrypt.compare(new_password, h.password_hash)) return res.status(400).json({ error: '최근 사용한 비밀번호는 재사용할 수 없습니다.' }); }
     const rounds = parseInt(process.env.BCRYPT_ROUNDS || '12');
     const hash = await bcrypt.hash(new_password, rounds);
-    await pool.execute('UPDATE users SET password_hash = ? WHERE user_id = ?', [hash, req.user.user_id]);
+    // 비밀번호 변경 시 password_must_change 플래그 해제 + 임시비번 만료 시각 지움
+    await pool.execute('UPDATE users SET password_hash = ?, password_must_change = FALSE, temp_password_expires_at = NULL WHERE user_id = ?', [hash, req.user.user_id]);
     await pool.execute('INSERT INTO password_history (user_id, password_hash) VALUES (?, ?)', [req.user.user_id, hash]);
     writeAuditLog({ company_id: req.user.company_id, user_id: req.user.user_id, action: 'PASSWORD_CHANGE', ip_address: req.ip });
     res.json({ message: '비밀번호가 변경되었습니다.' });
