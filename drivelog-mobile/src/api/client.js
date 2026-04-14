@@ -59,4 +59,10 @@ export const cancelCall = (id, b) => api.put(`/calls/${id}/cancel`, b).then(r =>
 // 마일리지
 export const fetchCustomerMileage = (id) => api.get(`/mileage/customer/${id}`).then(r => r.data);
 
+// Web Push 알림
+export const fetchPushPublicKey = () => api.get('/push/public-key').then(r => r.data);
+export const subscribePush = (b) => api.post('/push/subscribe', b).then(r => r.data);
+export const unsubscribePush = (b) => api.post('/push/unsubscribe', b).then(r => r.data);
+export const testPush = () => api.post('/push/test').then(r => r.data);
+
 export default api;

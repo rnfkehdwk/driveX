@@ -75,10 +75,6 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME}
-      # Web Push (VAPID) - 2026-04-15 추가
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
-      VAPID_SUBJECT: ${VAPID_SUBJECT}
       # PII Encryption (2026-04-10 작업 보류 중 — 재개 시 아래 주석 해제)
       # ⚠️ PII_ENC_KEY 분실 시 암호화된 데이터 영구 복구 불가
       # 64자 hex (32바이트). 별도 안전한 곳에 백업 필수.

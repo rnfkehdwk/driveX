@@ -27,8 +27,10 @@ const inquiriesRoutes = require('./routes/inquiries');
 const callsRoutes = require('./routes/calls');
 const auditLogsRoutes = require('./routes/auditLogs');
 const mileageRoutes = require('./routes/mileage');
+const pushRoutes = require('./routes/push');
 
 const { startCleanupScheduler } = require('./middleware/cleanupTestData');
+const { initVapid } = require('./utils/pushSender');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -67,8 +69,9 @@ app.use('/api/inquiries', inquiriesRoutes);
 app.use('/api/calls', callsRoutes);
 app.use('/api/audit-logs', auditLogsRoutes);
 app.use('/api/mileage', mileageRoutes);
+app.use('/api/push', pushRoutes);
 
-app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '2.6', timestamp: new Date().toISOString() }); });
+app.get('/api/health', (req, res) => { res.json({ status: 'ok', version: '2.7', timestamp: new Date().toISOString() }); });
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
@@ -77,8 +80,10 @@ app.use((err, req, res, next) => { console.error('Unhandled error:', err); res.s
 
 async function start() {
   await testConnection();
+  // VAPID 초기화 시도 (실패해도 서버는 정상 기동)
+  initVapid();
   app.listen(PORT, () => {
-    console.log(`DriveLog Admin Server v2.5 running on http://localhost:${PORT}`);
+    console.log(`DriveLog Admin Server v2.7 running on http://localhost:${PORT}`);
     // 검증용 테스트 데이터 자동 정리 스케줄러 시작 (24h 주기, 14일 경과)
     startCleanupScheduler();
   });

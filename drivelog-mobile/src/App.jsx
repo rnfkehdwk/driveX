@@ -11,6 +11,7 @@ import PartnerList from './pages/PartnerList';
 import CallList from './pages/CallList';
 import Settings from './pages/Settings';
 import { createInquiry } from './api/client';
+import { enablePushNotifications } from './utils/pushSubscribe';
 
 function InquiryModal({ user, onClose }) {
   const [form, setForm] = useState({ inquiry_type: 'RENEWAL', title: '서비스 갱신 요청', content: '' });
@@ -41,6 +42,16 @@ export default function App() {
   const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } });
   const [showInquiry, setShowInquiry] = useState(false);
   const [showInitPopup, setShowInitPopup] = useState(true);
+
+  // 로그인 시 푸시 알림 자동 활성화 (권한 있을 때만 조용히 시도)
+  // - 처음이면 브라우저가 권한 다이얼로그 띄움
+  // - 이미 거절했으면 조용히 실패
+  useEffect(() => {
+    if (!user) return;
+    enablePushNotifications()
+      .then(r => { if (!r.ok) console.log('[push] 활성화 스킵:', r.reason); })
+      .catch(err => console.log('[push] 오류:', err));
+  }, [user?.user_id]);
 
   const handleLogout = () => { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); localStorage.removeItem('user'); setUser(null); };
 

@@ -3,6 +3,7 @@ const router = express.Router();
 const { pool } = require('../config/database');
 const { authenticate, authorize, checkLicense } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
+const { sendToCompanyRiders } = require('../utils/pushSender');
 
 // GET /api/calls — 콜 목록 (SUPER_ADMIN: 본인 업체, RIDER: 대기 중 콜)
 router.get('/', authenticate, checkLicense, async (req, res) => {
@@ -159,6 +160,27 @@ router.post('/', authenticate, authorize('SUPER_ADMIN'), checkLicense, async (re
       target_id: result.insertId,
       detail: assignedRiderId ? { assigned_rider_id: assignedRiderId } : null,
       ip_address: req.ip
+    });
+
+    // 푸시 알림 발송 (fire-and-forget — 실패해도 콜 생성은 성공)
+    // 지명 콜(ASSIGNED)은 지명된 기사만, WAITING 콜은 전체 기사에게 알림
+    const fareText = estimated_fare ? `${Number(estimated_fare).toLocaleString()}원` : '미정';
+    const bodyLines = [];
+    bodyLines.push(`${start_address || '출발지 미정'}${start_detail ? ' ' + start_detail : ''}`);
+    if (end_address) bodyLines.push(`→ ${end_address}${end_detail ? ' ' + end_detail : ''}`);
+    bodyLines.push(`예상 요금: ${fareText}`);
+
+    const pushPayload = {
+      title: assignedRiderId ? '🚗 지명 콜 도착' : '🚗 새 콜 도착',
+      body: bodyLines.join('\n'),
+      url: '/m/calls',
+      tag: `call-${result.insertId}`,
+      callId: result.insertId,
+    };
+
+    // await 안 걸어서 응답 지연 방지
+    sendToCompanyRiders(req.user.company_id, pushPayload).catch(err => {
+      console.error('[push] 콜 알림 발송 오류:', err);
     });
 
     res.status(201).json({

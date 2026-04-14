@@ -8,46 +8,12 @@ export default function RideList() {
   const [month, setMonth] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; });
   const [loading, setLoading] = useState(true);
 
-  // 현재 로그인 사용자 (SA 권한 체크용)
-  const me = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
-  const isSA = me?.role === 'SUPER_ADMIN' || me?.role === 'MASTER';
-
   useEffect(() => {
     setLoading(true);
     fetchRides({ month, limit: 100 }).then(setData).catch(() => {}).finally(() => setLoading(false));
   }, [month]);
 
   const totalFare = (data.data || []).reduce((s, r) => s + Number(r.total_fare || 0), 0);
-
-  // 마일리지 적립 안내 SMS 보내기
-  // - tel:과 동일하게 sms: 스킴을 사용하면 기기의 기본 문자 앱이 본문/수신번호 미리 채워진 상태로 열림
-  // - 사용자는 "보내기" 버튼만 누르면 됨 (서버 SMS API 비용 0원, 통신사 문자로 발송)
-  const handleSendSMS = (r) => {
-    if (!r.customer_phone) {
-      alert('고객 전화번호가 없습니다.\n\n고객 정보에 전화번호를 등록해주세요.');
-      return;
-    }
-
-    const earned = Number(r.mileage_earned || 0);
-    const balance = Number(r.customer_mileage_balance || 0);
-    const companyName = r.company_name || '';
-
-    // 본문 작성
-    const body = [
-      `${companyName} 입니다.`,
-      `고객님 마일리지`,
-      `적립 : ${earned.toLocaleString()} 원`,
-      `총 적립액 : ${balance.toLocaleString()}원`,
-      `감사합니다.`,
-    ].join('\n');
-
-    // 전화번호에서 하이픈 제거 (sms: 스킴은 숫자만 권장)
-    const phone = String(r.customer_phone).replace(/[^0-9+]/g, '');
-
-    // sms: URL 생성 — iOS/Android 둘 다 ?body= 지원
-    const smsUrl = `sms:${phone}?body=${encodeURIComponent(body)}`;
-    window.location.href = smsUrl;
-  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc' }}>
@@ -81,51 +47,22 @@ export default function RideList() {
             background: 'white', borderRadius: 14, padding: '14px 16px', marginBottom: 10,
             border: '1px solid #f1f5f9', boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 12, color: '#2563eb', fontWeight: 600 }}>{(r.ride_date || '').slice(5)}</span>
                 <span style={{ fontSize: 12, color: '#94a3b8' }}>{r.ride_time}</span>
                 {r.partner_name && <span style={{ padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 600 }}>{r.partner_name}</span>}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                <span style={{ fontSize: 16, fontWeight: 800, color: '#1e293b' }}>{r.total_fare ? `${Number(r.total_fare).toLocaleString()}원` : '-'}</span>
-                {/* SA 전용: 마일리지 적립 안내 SMS 버튼 (고객 있는 운행만) */}
-                {isSA && r.customer_name && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleSendSMS(r); }}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '4px 10px',
-                      borderRadius: 999,
-                      border: '1px solid #2563eb',
-                      background: '#eff6ff',
-                      color: '#2563eb',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title="고객에게 마일리지 적립 안내 문자 보내기"
-                  >
-                    💬 문자
-                  </button>
-                )}
-              </div>
+              <span style={{ fontSize: 16, fontWeight: 800, color: '#1e293b' }}>{r.total_fare ? `${Number(r.total_fare).toLocaleString()}원` : '-'}</span>
             </div>
             <div style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
               {r.start_address && <div>📍 {r.start_address} {r.start_detail && <span style={{ color: '#94a3b8' }}>({r.start_detail})</span>}</div>}
               {r.end_address && <div>🏁 {r.end_address} {r.end_detail && <span style={{ color: '#94a3b8' }}>({r.end_detail})</span>}</div>}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 12, color: '#94a3b8', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 12, color: '#94a3b8' }}>
               {r.customer_name && <span>고객: {r.customer_name}</span>}
               {r.rider_name && <span>운전: {r.rider_name}</span>}
               {r.pickup_rider_name && <span>픽업: {r.pickup_rider_name}</span>}
-              {isSA && Number(r.mileage_earned) > 0 && (
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>적립: +{Number(r.mileage_earned).toLocaleString()}원</span>
-              )}
             </div>
           </div>
         ))}

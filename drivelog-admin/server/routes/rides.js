@@ -31,11 +31,11 @@ router.get('/', authenticate, checkLicense, async (req, res) => {
 
     const dataParams = [...params, parseInt(limit), offset];
     const [rows] = await pool.execute(
-      `SELECT r.ride_id, r.company_id, r.status, DATE_FORMAT(r.started_at, '%Y-%m-%d') AS ride_date, DATE_FORMAT(r.started_at, '%H:%i') AS ride_time, DATE_FORMAT(r.ended_at, '%H:%i') AS end_time,
+      `SELECT r.ride_id, r.company_id, r.customer_id, r.status, DATE_FORMAT(r.started_at, '%Y-%m-%d') AS ride_date, DATE_FORMAT(r.started_at, '%H:%i') AS ride_time, DATE_FORMAT(r.ended_at, '%H:%i') AS end_time,
               r.start_address, r.start_detail, r.start_lat, r.start_lng, r.end_address, r.end_detail, r.end_lat, r.end_lng,
               r.total_fare, r.cash_amount, r.mileage_used, r.mileage_earned, r.payment_type_id, r.rider_memo, r.admin_memo,
               pt.code AS payment_code, pt.label AS payment_label,
-              cust.customer_code, cust.name AS customer_name, cust.phone AS customer_phone,
+              cust.customer_code, cust.name AS customer_name, cust.phone AS customer_phone, cust.mileage_balance AS customer_mileage_balance,
               rider.name AS rider_name, rider.vehicle_number, pickup.name AS pickup_rider_name,
               partner.name AS partner_name, partner.phone AS partner_phone, comp.company_name
        FROM rides r LEFT JOIN users rider ON r.rider_id = rider.user_id LEFT JOIN users pickup ON r.pickup_rider_id = pickup.user_id
