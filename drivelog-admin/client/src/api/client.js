@@ -154,6 +154,12 @@ export const acceptCall = (id) => api.put(`/calls/${id}/accept`).then(r => r.dat
 export const completeCall = (id, body) => api.put(`/calls/${id}/complete`, body).then(r => r.data);
 export const cancelCall = (id, body) => api.put(`/calls/${id}/cancel`, body).then(r => r.data);
 
+// 푸시 알림 (Web Push) — 2026-04-22 추가
+export const fetchPushPublicKey = () => api.get('/push/public-key').then(r => r.data);
+export const subscribePush = (body) => api.post('/push/subscribe', body).then(r => r.data);
+export const unsubscribePush = (body) => api.post('/push/unsubscribe', body).then(r => r.data);
+export const testPush = () => api.post('/push/test').then(r => r.data);
+
 // 감사 로그
 export const fetchAuditLogs = (params) => api.get('/audit-logs', { params }).then(r => r.data);
 export const fetchAuditLogActions = () => api.get('/audit-logs/actions').then(r => r.data);

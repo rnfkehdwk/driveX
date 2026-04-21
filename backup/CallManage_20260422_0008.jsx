@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchCalls, createCall, cancelCall, updateCall, fetchCustomers, fetchPartners, fetchPaymentTypes, fetchFrequentAddresses, fetchRiders, createCustomer } from '../api/client';
+import { fetchCalls, createCall, cancelCall, updateCall, fetchCustomers, fetchPartners, fetchPaymentTypes, fetchFrequentAddresses, fetchRiders } from '../api/client';
 import AddressSearchModal from '../components/AddressSearchModal';
 import KakaoMiniMap from '../components/KakaoMiniMap';
 
@@ -26,9 +26,6 @@ function CreateCallModal({ onClose, onCreated }) {
   const [showCustList, setShowCustList] = useState(false);
   const [showPartList, setShowPartList] = useState(false);
   const [saving, setSaving] = useState(false);
-  // 신규 고객 등록 (검색 결과 없을 때 바로 등록)
-  const [newCustPhone, setNewCustPhone] = useState('');
-  const [newCustSaving, setNewCustSaving] = useState(false);
   const [addrSearch, setAddrSearch] = useState(null); // 'start' | 'end' | null
   // 자주 가는 곳 (즐겨찾기 대체)
   const [frequentStart, setFrequentStart] = useState([]);
@@ -63,33 +60,6 @@ function CreateCallModal({ onClose, onCreated }) {
       setForm(f => ({ ...f, end_address: result.address || result.name, end_lat: result.lat, end_lng: result.lng }));
     }
     setAddrSearch(null);
-  };
-
-  // 신규 고객 등록 — custSearch를 이름으로 사용하고 newCustPhone을 전화로 사용
-  const handleCreateNewCustomer = async () => {
-    const name = custSearch.trim();
-    if (!name) { alert('고객명을 입력해주세요.'); return; }
-    setNewCustSaving(true);
-    try {
-      const res = await createCustomer({ name, phone: newCustPhone.trim() || null });
-      // 응답: { customer_id, customer_code, message }
-      const newCust = {
-        customer_id: res.customer_id,
-        customer_code: res.customer_code,
-        name,
-        phone: newCustPhone.trim() || null,
-      };
-      // 고객 목록에 추가 + 선택 상태로 설정
-      setCustomers(prev => [newCust, ...prev]);
-      setSelectedCust(newCust);
-      setCustSearch('');
-      setNewCustPhone('');
-      setShowCustList(false);
-    } catch (err) {
-      alert(err.response?.data?.error || '고객 등록 실패');
-    } finally {
-      setNewCustSaving(false);
-    }
   };
 
   const handleSubmit = async () => {
@@ -136,7 +106,7 @@ function CreateCallModal({ onClose, onCreated }) {
         <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 10 }}>📍 위치 정보</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8, position: 'relative' }}>
-            <div><label style={ls}>출발지 *</label><textarea value={form.start_address} onChange={set('start_address')} placeholder="출발 주소" rows={2} style={{ ...is, resize: 'none', fontFamily: 'inherit', lineHeight: 1.4 }} /></div>
+            <div><label style={ls}>출발지 *</label><input value={form.start_address} onChange={set('start_address')} placeholder="출발 주소" style={is} /></div>
             <div style={{ alignSelf: 'end', position: 'relative' }}>
               <button
                 onClick={() => setShowFreqStart(!showFreqStart)}
@@ -171,7 +141,7 @@ function CreateCallModal({ onClose, onCreated }) {
           <KakaoMiniMap startLat={form.start_lat} startLng={form.start_lng} height={160} />
           <div style={{ height: 1, background: '#e2e8f0', margin: '12px 0' }} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8, position: 'relative' }}>
-            <div><label style={ls}>도착지 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(미정 가능)</span></label><textarea value={form.end_address} onChange={set('end_address')} placeholder="도착 주소 (비워두면 미정)" rows={2} style={{ ...is, resize: 'none', fontFamily: 'inherit', lineHeight: 1.4 }} /></div>
+            <div><label style={ls}>도착지 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(미정 가능)</span></label><input value={form.end_address} onChange={set('end_address')} placeholder="도착 주소 (비워두면 미정)" style={is} /></div>
             <div style={{ alignSelf: 'end', position: 'relative' }}>
               <button
                 onClick={() => setShowFreqEnd(!showFreqEnd)}
@@ -243,40 +213,8 @@ function CreateCallModal({ onClose, onCreated }) {
                   </div>
                 )}
                 {showCustList && custSearch && filteredCust.length === 0 && (
-                  <div
-                    style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, zIndex: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
-                  >
-                    <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', marginBottom: 10 }}>검색 결과 없음</div>
-                    <div style={{ height: 1, background: '#e2e8f0', margin: '8px 0' }} />
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', marginBottom: 6 }}>+ 신규 고객 등록</div>
-                    <div style={{ marginBottom: 6 }}>
-                      <label style={{ ...ls, marginBottom: 2 }}>이름</label>
-                      <input
-                        value={custSearch}
-                        onChange={e => setCustSearch(e.target.value)}
-                        onFocus={() => setShowCustList(true)}
-                        placeholder="고객명"
-                        style={{ ...is, padding: '8px 10px', fontSize: 13 }}
-                      />
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <label style={{ ...ls, marginBottom: 2 }}>전화번호 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(선택)</span></label>
-                      <input
-                        value={newCustPhone}
-                        onChange={e => setNewCustPhone(e.target.value)}
-                        onFocus={() => setShowCustList(true)}
-                        placeholder="010-0000-0000"
-                        style={{ ...is, padding: '8px 10px', fontSize: 13 }}
-                      />
-                    </div>
-                    <button
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={handleCreateNewCustomer}
-                      disabled={newCustSaving || !custSearch.trim()}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: 'none', background: (newCustSaving || !custSearch.trim()) ? '#cbd5e1' : '#2563eb', color: 'white', fontSize: 12, fontWeight: 700, cursor: (newCustSaving || !custSearch.trim()) ? 'not-allowed' : 'pointer' }}
-                    >
-                      {newCustSaving ? '등록 중...' : '+ 등록하고 선택'}
-                    </button>
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 12, color: '#94a3b8', textAlign: 'center', zIndex: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    검색 결과 없음
                   </div>
                 )}
               </>

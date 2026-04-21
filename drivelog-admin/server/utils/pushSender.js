@@ -56,6 +56,67 @@ async function sendToOne(subscription, payload) {
   }
 }
 
+// 구독 목록에 푸시 발송 (공통 내부 헬퍼)
+// 실패한 구독은 자동으로 DB에서 삭제, 성공한 구독은 last_used_at 업데이트
+async function sendBySubscriptions(subs, payload, logTag) {
+  if (subs.length === 0) {
+    console.log(`[push] ${logTag}: 활성 구독 없음`);
+    return { sent: 0, failed: 0, removed: 0 };
+  }
+
+  let sent = 0, failed = 0, removed = 0;
+  const removeIds = [];
+
+  // 병렬 발송 (Promise.allSettled)
+  const results = await Promise.allSettled(
+    subs.map(s =>
+      sendToOne(
+        { endpoint: s.endpoint, keys: { p256dh: s.p256dh_key, auth: s.auth_key } },
+        payload
+      ).then(r => ({ sub: s, r }))
+    )
+  );
+
+  for (const result of results) {
+    if (result.status !== 'fulfilled') { failed++; continue; }
+    const { sub, r } = result.value;
+    if (r.ok) {
+      sent++;
+    } else {
+      failed++;
+      if (r.gone) removeIds.push(sub.id);
+    }
+  }
+
+  // 만료된 구독 일괄 삭제
+  if (removeIds.length > 0) {
+    const placeholders = removeIds.map(() => '?').join(',');
+    await pool.execute(
+      `DELETE FROM push_subscriptions WHERE id IN (${placeholders})`,
+      removeIds
+    );
+    removed = removeIds.length;
+    console.log(`[push] ${logTag}: 만료 구독 ${removed}건 삭제`);
+  }
+
+  // 성공한 구독의 last_used_at 업데이트 (best-effort, 실패 무시)
+  if (sent > 0) {
+    const successIds = results
+      .filter(r => r.status === 'fulfilled' && r.value.r.ok)
+      .map(r => r.value.sub.id);
+    if (successIds.length > 0) {
+      const ph = successIds.map(() => '?').join(',');
+      pool.execute(
+        `UPDATE push_subscriptions SET last_used_at = NOW() WHERE id IN (${ph})`,
+        successIds
+      ).catch(() => {});
+    }
+  }
+
+  console.log(`[push] ${logTag}: 발송 ${sent}, 실패 ${failed}, 삭제 ${removed}`);
+  return { sent, failed, removed };
+}
+
 // 회사의 모든 활성 RIDER(+ 같은 회사 SUPER_ADMIN)에게 푸시 발송
 // 실패한 구독은 자동으로 DB에서 삭제
 // fire-and-forget: 호출자는 await 안 해도 됨
@@ -80,64 +141,38 @@ async function sendToCompanyRiders(companyId, payload, options = {}) {
       [companyId]
     );
 
-    if (subs.length === 0) {
-      console.log(`[push] 회사 ${companyId} 활성 구독 없음`);
-      return { sent: 0, failed: 0, removed: 0 };
-    }
-
-    let sent = 0, failed = 0, removed = 0;
-    const removeIds = [];
-
-    // 병렬 발송 (Promise.allSettled)
-    const results = await Promise.allSettled(
-      subs.map(s =>
-        sendToOne(
-          { endpoint: s.endpoint, keys: { p256dh: s.p256dh_key, auth: s.auth_key } },
-          payload
-        ).then(r => ({ sub: s, r }))
-      )
-    );
-
-    for (const result of results) {
-      if (result.status !== 'fulfilled') { failed++; continue; }
-      const { sub, r } = result.value;
-      if (r.ok) {
-        sent++;
-      } else {
-        failed++;
-        if (r.gone) removeIds.push(sub.id);
-      }
-    }
-
-    // 만료된 구독 일괄 삭제
-    if (removeIds.length > 0) {
-      const placeholders = removeIds.map(() => '?').join(',');
-      await pool.execute(
-        `DELETE FROM push_subscriptions WHERE id IN (${placeholders})`,
-        removeIds
-      );
-      removed = removeIds.length;
-      console.log(`[push] 만료 구독 ${removed}건 삭제`);
-    }
-
-    // 성공한 구독의 last_used_at 업데이트 (best-effort, 실패 무시)
-    if (sent > 0) {
-      const successIds = results
-        .filter(r => r.status === 'fulfilled' && r.value.r.ok)
-        .map(r => r.value.sub.id);
-      if (successIds.length > 0) {
-        const ph = successIds.map(() => '?').join(',');
-        pool.execute(
-          `UPDATE push_subscriptions SET last_used_at = NOW() WHERE id IN (${ph})`,
-          successIds
-        ).catch(() => {});
-      }
-    }
-
-    console.log(`[push] 회사 ${companyId}: 발송 ${sent}, 실패 ${failed}, 삭제 ${removed}`);
-    return { sent, failed, removed };
+    return await sendBySubscriptions(subs, payload, `회사 ${companyId} (Riders)`);
   } catch (err) {
     console.error('[push] sendToCompanyRiders 오류:', err);
+    return { sent: 0, failed: 0, removed: 0, error: err.message };
+  }
+}
+
+// 회사의 SUPER_ADMIN(사장님)에게만 푸시 발송
+// 용도: 콜 수락 알림 등, 사장님에게만 알려야 하는 이벤트
+// 2026-04-22 추가
+// options.excludeUserId — 특정 user_id는 제외 (예: 본인이 수락한 콜을 본인에게 알리지 않기)
+async function sendToCompanyAdmins(companyId, payload, options = {}) {
+  if (!webpush || !initVapid()) {
+    console.warn('[push] 발송 스킵: VAPID 미설정');
+    return { sent: 0, failed: 0, removed: 0 };
+  }
+
+  try {
+    let sql = `SELECT ps.id, ps.endpoint, ps.p256dh_key, ps.auth_key, ps.user_id
+               FROM push_subscriptions ps
+               INNER JOIN users u ON u.user_id = ps.user_id
+               WHERE ps.company_id = ? AND u.status = 'ACTIVE' AND u.role = 'SUPER_ADMIN'`;
+    const params = [companyId];
+    if (options.excludeUserId) {
+      sql += ' AND ps.user_id != ?';
+      params.push(options.excludeUserId);
+    }
+
+    const [subs] = await pool.execute(sql, params);
+    return await sendBySubscriptions(subs, payload, `회사 ${companyId} (Admins)`);
+  } catch (err) {
+    console.error('[push] sendToCompanyAdmins 오류:', err);
     return { sent: 0, failed: 0, removed: 0, error: err.message };
   }
 }
@@ -146,5 +181,6 @@ module.exports = {
   hashEndpoint,
   sendToOne,
   sendToCompanyRiders,
+  sendToCompanyAdmins,
   initVapid,
 };

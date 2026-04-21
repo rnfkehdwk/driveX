@@ -3,7 +3,7 @@ const router = express.Router();
 const { pool } = require('../config/database');
 const { authenticate, authorize, checkLicense } = require('../middleware/auth');
 const { writeAuditLog } = require('../middleware/audit');
-const { sendToCompanyRiders, sendToCompanyAdmins } = require('../utils/pushSender');
+const { sendToCompanyRiders } = require('../utils/pushSender');
 
 // GET /api/calls — 콜 목록 (SUPER_ADMIN: 본인 업체, RIDER: 대기 중 콜)
 router.get('/', authenticate, checkLicense, async (req, res) => {
@@ -224,26 +224,6 @@ router.put('/:id/accept', authenticate, authorize('RIDER', 'SUPER_ADMIN'), async
        LEFT JOIN partner_companies partner ON c.partner_id = partner.partner_id
        WHERE c.call_id = ?`, [req.params.id]
     );
-
-    // SA(사장님)에게 콜 수락 알림 (fire-and-forget, 2026-04-22 추가)
-    // 본인이 수락한 경우는 자기 자신에게 보내지 않음 (excludeUserId)
-    const acceptedCall = updated[0] || {};
-    const riderName = req.user.name || '기사';
-    const acceptBodyLines = [];
-    acceptBodyLines.push(`${acceptedCall.start_address || '출발지 미정'}${acceptedCall.start_detail ? ' ' + acceptedCall.start_detail : ''}`);
-    if (acceptedCall.end_address) acceptBodyLines.push(`→ ${acceptedCall.end_address}${acceptedCall.end_detail ? ' ' + acceptedCall.end_detail : ''}`);
-
-    const acceptPushPayload = {
-      title: `✅ ${riderName} 기사가 콜 수락`,
-      body: acceptBodyLines.join('\n'),
-      url: '/admin/calls',
-      tag: `accept-${req.params.id}`,
-      callId: parseInt(req.params.id),
-    };
-
-    sendToCompanyAdmins(req.user.company_id, acceptPushPayload, { excludeUserId: req.user.user_id }).catch(err => {
-      console.error('[push] 콜 수락 알림 발송 오류:', err);
-    });
 
     res.json({ message: '콜을 수락했습니다.', call: updated[0] });
   } catch (err) { await conn.rollback(); console.error('PUT /calls/:id/accept error:', err); res.status(500).json({ error: '콜 수락 실패' }); }

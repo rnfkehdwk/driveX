@@ -1,0 +1,20 @@
+# App.jsx 백업 노트 — 2026-04-22
+
+## 변경 요약
+Web Push 알림 구독 자동화 추가.
+
+## 변경 내역
+1. `import` 추가 (25번 줄 근처): `import { enablePushNotifications } from './utils/pushSubscribe';`
+2. 기존 `useEffect(() => { if (user) { ... } }, [user])` 블록 안에 SUPER_ADMIN 전용 푸시 활성화 로직 추가.
+
+## 롤백 방법
+- `backup/App_admin_20260410_1700.jsx` 또는 git의 해당 파일 이전 버전으로 복구
+- 또는 위 변경 2건을 수동으로 되돌리기 (import 1줄, useEffect 내 6줄 삭제)
+
+## 참고
+- 신규 파일: `src/utils/pushSubscribe.js` (모바일 버전 포팅)
+- 신규 파일: `public/sw.js` (admin 전용 Service Worker)
+- `api/client.js`에 push 함수 4개 추가 (fetchPushPublicKey, subscribePush, unsubscribePush, testPush)
+- `main.jsx`에 SW 등록 코드 추가
+- `server/utils/pushSender.js`에 sendToCompanyAdmins() 추가
+- `server/routes/calls.js`의 /accept 라우트에 SA 푸시 발송 추가

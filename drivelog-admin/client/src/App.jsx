@@ -24,6 +24,7 @@ import Reports from './pages/Reports';
 import FareSettlement from './pages/FareSettlement';
 import Attendance from './pages/Attendance';
 import { logout as apiLogout, createInquiry, changePassword, getMe } from './api/client';
+import { enablePushNotifications } from './utils/pushSubscribe';
 
 const ADMIN_VERSION = __BUILD_TIME__ || 'dev';
 
@@ -164,6 +165,13 @@ export default function App() {
       if (user.password_must_change) {
         setForcePwChange(true);
         setShowPwModal(true);
+      }
+      // 사장님(SUPER_ADMIN)이고 라이선스 유효하면 웹 푸시 구독 자동 활성화 (2026-04-22)
+      // — 새 콜 수락 시 SA에게 알림 가도록
+      if (user.role === 'SUPER_ADMIN' && !user.license_expired) {
+        enablePushNotifications()
+          .then(r => { if (!r.ok) console.log('[push] 활성화 스킵:', r.reason); })
+          .catch(err => console.log('[push] 오류:', err));
       }
     }
   }, [user]);
