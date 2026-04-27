@@ -9,44 +9,11 @@ function formatPhone(v) {
   return `${n.slice(0,3)}-${n.slice(3,7)}-${n.slice(7)}`;
 }
 
-// Contact Picker API 정규화 (한국 폰 번호 포맷)
-function normalizeKoreanPhone(rawTel) {
-  if (!rawTel) return '';
-  let digits = rawTel.replace(/[^0-9+]/g, '');
-  if (digits.startsWith('+82')) digits = '0' + digits.slice(3);
-  digits = digits.replace(/[^0-9]/g, '');
-  if (digits.length === 11) return `${digits.slice(0,3)}-${digits.slice(3,7)}-${digits.slice(7)}`;
-  if (digits.length === 10) return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
-  return digits;
-}
-
 export default function RiderNew() {
   const nav = useNavigate();
   const [form, setForm] = useState({ login_id: '', password: '', name: '', phone: '', vehicle_number: '', vehicle_type: '' });
   const [saving, setSaving] = useState(false);
   const up = (k) => (e) => setForm(f => ({ ...f, [k]: k === 'phone' ? formatPhone(e.target.value) : e.target.value }));
-
-  // Contact Picker API 지원 여부 (Android Chrome HTTPS 한정)
-  const supportsContactPicker = typeof window !== 'undefined' && 'contacts' in navigator && 'ContactsManager' in window;
-
-  const handlePickContact = async () => {
-    if (!supportsContactPicker) return;
-    try {
-      const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
-      if (!contacts || contacts.length === 0) return;
-      const c = contacts[0];
-      const pickedName = (c.name && c.name[0]) || '';
-      const pickedTel = normalizeKoreanPhone((c.tel && c.tel[0]) || '');
-      setForm(f => ({
-        ...f,
-        // 이미 입력한 이름이 있으면 덮어쓰지 않음
-        name: f.name || pickedName,
-        phone: pickedTel || f.phone,
-      }));
-    } catch (err) {
-      console.warn('Contact picker failed:', err);
-    }
-  };
 
   const S = { input: { width: '100%', padding: '14px 16px', borderRadius: 12, border: '1.5px solid #e2e8f0', fontSize: 16, outline: 'none', background: '#f8f9fb' } };
 
@@ -79,16 +46,7 @@ export default function RiderNew() {
             { k: 'vehicle_type', label: '차종', ph: '소나타', mode: 'text' },
           ].map(f => (
             <div key={f.k} style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#6b7280' }}>{f.label}</label>
-                {f.k === 'phone' && supportsContactPicker && (
-                  <button
-                    type="button"
-                    onClick={handlePickContact}
-                    style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
-                  >📞 연락처에서 가져오기</button>
-                )}
-              </div>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>{f.label}</label>
               <input type={f.type || 'text'} style={S.input} inputMode={f.mode === 'tel' ? 'numeric' : undefined} placeholder={f.ph} value={form[f.k]} onChange={up(f.k)} />
             </div>
           ))}

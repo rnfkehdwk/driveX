@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Contact Picker 진단</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 16px; background: #0f172a; color: #e2e8f0; line-height: 1.5; }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  .card { background: #1e293b; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .value { font-size: 15px; font-weight: 700; word-break: break-all; }
+  .ok { color: #4ade80; }
+  .bad { color: #f87171; }
+  .warn { color: #fbbf24; }
+  button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: #2563eb; color: white; font-size: 15px; font-weight: 700; margin-top: 12px; }
+  button:disabled { background: #475569; }
+  pre { font-size: 11px; background: #0a0f1a; padding: 8px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
+  .conclusion { padding: 16px; border-radius: 10px; margin-top: 16px; font-size: 14px; font-weight: 700; text-align: center; }
+  .conclusion.ok { background: #064e3b; color: #4ade80; }
+  .conclusion.bad { background: #7f1d1d; color: #fca5a5; }
+</style>
+</head>
+<body>
+<h1>📞 Contact Picker API 진단</h1>
+
+<div class="card">
+  <div class="label">'contacts' in navigator</div>
+  <div class="value" id="r1">...</div>
+</div>
+
+<div class="card">
+  <div class="label">'ContactsManager' in window</div>
+  <div class="value" id="r2">...</div>
+</div>
+
+<div class="card">
+  <div class="label">window.isSecureContext</div>
+  <div class="value" id="r3">...</div>
+</div>
+
+<div class="card">
+  <div class="label">location.protocol + host</div>
+  <div class="value" id="r4">...</div>
+</div>
+
+<div class="card">
+  <div class="label">window.matchMedia('(display-mode: standalone)')</div>
+  <div class="value" id="r5">...</div>
+</div>
+
+<div class="card">
+  <div class="label">User Agent</div>
+  <div class="value" id="r6" style="font-size: 11px; font-weight: 400;">...</div>
+</div>
+
+<div class="card">
+  <div class="label">전체 navigator 객체 키 중 contact* 검색</div>
+  <pre id="r7">...</pre>
+</div>
+
+<div id="conclusion" class="conclusion">진단 중...</div>
+
+<button id="testBtn">🧪 navigator.contacts.select() 직접 호출 테스트</button>
+<div class="card" id="testResult" style="display:none;">
+  <div class="label">테스트 결과</div>
+  <pre id="testOutput"></pre>
+</div>
+
+<script>
+(function() {
+  function setText(id, value, klass) {
+    var el = document.getElementById(id);
+    el.textContent = value;
+    if (klass) el.className = 'value ' + klass;
+  }
+
+  var hasContacts = 'contacts' in navigator;
+  var hasManager = 'ContactsManager' in window;
+  var isSecure = window.isSecureContext;
+  var standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+
+  setText('r1', hasContacts ? 'true ✓' : 'false ✗', hasContacts ? 'ok' : 'bad');
+  setText('r2', hasManager ? 'true ✓' : 'false ✗', hasManager ? 'ok' : 'bad');
+  setText('r3', isSecure ? 'true ✓' : 'false ✗', isSecure ? 'ok' : 'bad');
+  setText('r4', location.protocol + '//' + location.host);
+  setText('r5', standalone ? 'true (PWA standalone) ✓' : 'false (브라우저 탭)', standalone ? 'ok' : 'warn');
+  setText('r6', navigator.userAgent);
+
+  var keys = [];
+  for (var k in navigator) {
+    if (k.toLowerCase().indexOf('contact') !== -1) keys.push('navigator.' + k);
+  }
+  for (var k in window) {
+    if (k.toLowerCase().indexOf('contact') !== -1) keys.push('window.' + k);
+  }
+  document.getElementById('r7').textContent = keys.length > 0 ? keys.join('\n') : '(없음)';
+
+  var conclusion = document.getElementById('conclusion');
+  var supportsLogic = hasContacts && hasManager;
+
+  if (supportsLogic && isSecure) {
+    conclusion.className = 'conclusion ok';
+    conclusion.textContent = '✓ 지원됨 — supportsContactPicker = true';
+  } else if (!isSecure) {
+    conclusion.className = 'conclusion bad';
+    conclusion.textContent = '✗ Secure Context가 아님 — Contact Picker 동작 불가';
+  } else if (!hasContacts && !hasManager) {
+    conclusion.className = 'conclusion bad';
+    conclusion.textContent = '✗ 이 브라우저는 Contact Picker API 미지원';
+  } else {
+    conclusion.className = 'conclusion bad';
+    conclusion.textContent = '✗ 부분 미지원 — 코드 판정 결과 false';
+  }
+
+  document.getElementById('testBtn').addEventListener('click', async function() {
+    var out = document.getElementById('testOutput');
+    document.getElementById('testResult').style.display = 'block';
+    out.textContent = '시도 중...';
+    try {
+      if (!hasContacts) { out.textContent = 'navigator.contacts 자체가 없음'; return; }
+      var contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+      out.textContent = '✓ 성공!\n' + JSON.stringify(contacts, null, 2);
+    } catch (err) {
+      out.textContent = '✗ 오류: ' + (err && err.message ? err.message : String(err)) + '\n\n' + (err && err.stack ? err.stack : '');
+    }
+  });
+})();
+</script>
+</body>
+</html>

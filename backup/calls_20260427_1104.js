@@ -277,10 +277,7 @@ router.put('/:id/complete', authenticate, authorize('RIDER', 'SUPER_ADMIN'), asy
   } catch (err) { console.error('PUT /calls/:id/complete error:', err); res.status(500).json({ error: '완료 처리 실패' }); }
 });
 
-// PUT /api/calls/:id/cancel — 콜 취소
-// 분기 기준: "본인이 수락한 콜인가?" (역할이 아닌 수락 여부 기준 — 2026-04-27 수정)
-//   - 본인이 수락한 콜(ASSIGNED/IN_PROGRESS) → '수락 취소' = WAITING으로 복구 (RIDER, SUPER_ADMIN 모두)
-//   - 그 외(WAITING 콜 또는 다른 기사가 수락한 콜) → SUPER_ADMIN만 가능, CANCELLED로 영구 취소
+// PUT /api/calls/:id/cancel — 콜 취소 (SUPER_ADMIN 또는 수락한 RIDER)
 router.put('/:id/cancel', authenticate, async (req, res) => {
   try {
     const [calls] = await pool.execute(
@@ -288,50 +285,24 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
       [req.params.id, req.user.company_id]
     );
     if (calls.length === 0) return res.status(404).json({ error: '콜을 찾을 수 없습니다.' });
-    const call = calls[0];
-    if (call.status === 'COMPLETED') return res.status(400).json({ error: '이미 완료된 콜은 취소할 수 없습니다.' });
-    if (call.status === 'CANCELLED') return res.status(400).json({ error: '이미 취소된 콜입니다.' });
+    if (calls[0].status === 'COMPLETED') return res.status(400).json({ error: '이미 완료된 콜은 취소할 수 없습니다.' });
 
-    // CASE 1: 본인이 수락한 콜의 '수락 취소' → WAITING으로 복구
-    // (RIDER든 SUPER_ADMIN이든 동일하게 동작 — 본인이 수락한 콜이면 누구나 풀 수 있음)
-    const isMyAcceptedCall = ['ASSIGNED', 'IN_PROGRESS'].includes(call.status)
-      && call.assigned_rider_id === req.user.user_id;
-
-    if (isMyAcceptedCall) {
+    // RIDER는 본인이 수락한 콜만 취소 가능 (WAITING으로 되돌림)
+    if (req.user.role === 'RIDER') {
+      if (calls[0].assigned_rider_id !== req.user.user_id) return res.status(403).json({ error: '본인이 수락한 콜만 취소할 수 있습니다.' });
       await pool.execute(
         "UPDATE calls SET status = 'WAITING', assigned_rider_id = NULL, assigned_at = NULL WHERE call_id = ?",
         [req.params.id]
       );
-      writeAuditLog({
-        company_id: req.user.company_id,
-        user_id: req.user.user_id,
-        action: 'CALL_RELEASE',
-        target_table: 'calls',
-        target_id: parseInt(req.params.id),
-        ip_address: req.ip
-      });
       return res.json({ message: '콜 수락이 취소되었습니다. 다른 기사가 수락할 수 있습니다.' });
     }
 
-    // CASE 2: 본인이 수락한 콜이 아닌 경우 → SUPER_ADMIN만 영구 취소 가능
-    if (req.user.role !== 'SUPER_ADMIN' && req.user.role !== 'MASTER') {
-      return res.status(403).json({ error: '본인이 수락한 콜만 취소할 수 있습니다.' });
-    }
-
+    // SUPER_ADMIN은 완전 취소
     const { cancel_reason } = req.body;
     await pool.execute(
       "UPDATE calls SET status = 'CANCELLED', cancelled_at = NOW(), cancel_reason = ? WHERE call_id = ?",
       [cancel_reason || null, req.params.id]
     );
-    writeAuditLog({
-      company_id: req.user.company_id,
-      user_id: req.user.user_id,
-      action: 'CALL_CANCEL',
-      target_table: 'calls',
-      target_id: parseInt(req.params.id),
-      detail: cancel_reason ? { cancel_reason } : null,
-      ip_address: req.ip
-    });
 
     res.json({ message: '콜이 취소되었습니다.' });
   } catch (err) { console.error('PUT /calls/:id/cancel error:', err); res.status(500).json({ error: '취소 실패' }); }

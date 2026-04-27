@@ -37,7 +37,6 @@ export const createUser = (b) => api.post('/users', b).then(r => r.data);
 
 export const fetchCustomers = (p) => api.get('/customers', { params: p }).then(r => r.data);
 export const createCustomer = (b) => api.post('/customers', b).then(r => r.data);
-export const updateCustomer = (id, b) => api.put(`/customers/${id}`, b).then(r => r.data);
 
 export const fetchPartners = (p) => api.get('/partners', { params: p }).then(r => r.data);
 export const createPartner = (b) => api.post('/partners', b).then(r => r.data);

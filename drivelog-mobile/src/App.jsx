@@ -38,6 +38,65 @@ function ExpiringBanner({ user }) {
 
 function Guard({ user, children }) { return user ? children : <Navigate to="/login" />; }
 
+// 새 버전 사용 가능 토스트 (2026-04-27)
+// 소스: index.html의 SW 등록 스크립트가 'drivelog:sw-update-ready' 이벤트 발생
+// 사용자가 '새로고침' 누르면 대기 중인 새 SW에 SKIP_WAITING 메시지 전송
+// → SW가 controllerchange 발생시키고 index.html이 자동 reload
+function UpdateToast() {
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const onUpdate = () => setShow(true);
+    window.addEventListener('drivelog:sw-update-ready', onUpdate);
+    return () => window.removeEventListener('drivelog:sw-update-ready', onUpdate);
+  }, []);
+
+  const handleRefresh = async () => {
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg && reg.waiting) {
+          // 대기 중인 새 SW에 즉시 활성화 요청
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          // 이후 controllerchange 이벤트가 발생해서 index.html이 자동 reload
+          return;
+        }
+      }
+      // fallback
+      window.location.reload();
+    } catch {
+      window.location.reload();
+    }
+  };
+
+  if (!show) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+      maxWidth: 380, width: 'calc(100% - 32px)', zIndex: 250,
+      background: '#1e293b', color: 'white', borderRadius: 14, padding: '14px 16px',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+      display: 'flex', alignItems: 'center', gap: 12,
+    }}>
+      <div style={{ fontSize: 20 }}>✨</div>
+      <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 700 }}>새 버전이 설치되었어요</div>
+        <div style={{ color: '#94a3b8', fontSize: 11 }}>새로고침하면 적용됩니다</div>
+      </div>
+      <button onClick={handleRefresh} style={{
+        padding: '8px 14px', borderRadius: 8, border: 'none',
+        background: '#2563eb', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}>새로고침</button>
+      <button onClick={() => setShow(false)} aria-label="닫기" style={{
+        background: 'transparent', border: 'none', color: '#94a3b8',
+        fontSize: 18, cursor: 'pointer', padding: 0, width: 24, height: 24,
+      }}>✕</button>
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } });
   const [showInquiry, setShowInquiry] = useState(false);
@@ -74,6 +133,7 @@ export default function App() {
       )}
 
       {showInquiry && <InquiryModal user={user} onClose={() => setShowInquiry(false)} />}
+      <UpdateToast />
       {user && !isExpired && <ExpiringBanner user={user} />}
       {user && isExpired && !showInitPopup && (
         <div onClick={() => isSuperAdmin ? setShowInquiry(true) : null} style={{ background: '#fef2f2', padding: '10px 16px', fontSize: 13, fontWeight: 700, color: '#dc2626', textAlign: 'center', cursor: isSuperAdmin ? 'pointer' : 'default', borderBottom: '1px solid #fecaca' }}>

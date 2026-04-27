@@ -1,24 +1,89 @@
 // DriveLog Mobile PWA Service Worker
-// v2.4 - 2026-04-15: Web Push 알림 추가
-const CACHE_NAME = 'drivelog-v2.4';
-const STATIC_ASSETS = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
+// v3.0 - 2026-04-27: PWA 캐시 자동 갱신 인프라
+// mohdyrll는 vite injectSwBuildId 플러그인이 빌드 시점에 치환하므로
+// 매 빌드마다 sw.js 자체가 바이트 단위로 달라짐 → 브라우저가 새 SW 자동 감지
+const BUILD_ID = 'mohdyrll';
+const CACHE_NAME = `drivelog-${BUILD_ID}`;
+
+// 정적 자산만 캐시 (HTML은 의도적으로 제외 — 항상 네트워크에서 받아 새 JS 해시 파일명 갱신)
+const STATIC_ASSETS = ['/m/manifest.json', '/m/icon-192.png', '/m/icon-512.png'];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(STATIC_ASSETS)));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((c) => c.addAll(STATIC_ASSETS))
+  );
+  // 새 SW 즉시 활성화 (대기 큐 건너뛰기)
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))));
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(
+      keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+    ))
+  );
+  // 모든 클라이언트(열린 탭/PWA)를 즉시 이 SW가 제어하도록
   self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api/')) { event.respondWith(fetch(event.request).catch(() => new Response(JSON.stringify({ error: '오프라인' }), { headers: { 'Content-Type': 'application/json' }, status: 503 }))); return; }
-  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) { event.respondWith(fetch(event.request).then((r) => { if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((ca) => ca.put(event.request, cl)); } return r; }).catch(() => caches.match(event.request))); return; }
-  if (event.request.mode === 'navigate' || url.pathname.endsWith('.html')) { event.respondWith(fetch(event.request).then((r) => { if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((ca) => ca.put(event.request, cl)); } return r; }).catch(() => caches.match('/index.html'))); return; }
-  event.respondWith(caches.match(event.request).then((c) => c || fetch(event.request).then((r) => { if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((ca) => ca.put(event.request, cl)); } return r; })));
+
+  // 1) API 요청은 절대 캐시하지 않음
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(event.request).catch(() => new Response(
+        JSON.stringify({ error: '오프라인' }),
+        { headers: { 'Content-Type': 'application/json' }, status: 503 }
+      ))
+    );
+    return;
+  }
+
+  // 2) HTML / navigation 요청은 항상 네트워크 우선, no-store 강제
+  //    → 새 JS 해시 파일명을 매번 받기 위함. 오프라인 fallback도 제공하지 않음
+  //    (PWA가 오프라인에서 동작할 필요 없음 — 항상 서버 통신 필수)
+  if (event.request.mode === 'navigate' || url.pathname.endsWith('.html')) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+    );
+    return;
+  }
+
+  // 3) JS/CSS는 해시 파일명이라 안전하게 cache-first (속도 최적화)
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((r) => {
+          if (r.ok) {
+            const cl = r.clone();
+            caches.open(CACHE_NAME).then((ca) => ca.put(event.request, cl));
+          }
+          return r;
+        });
+      })
+    );
+    return;
+  }
+
+  // 4) 기타 자산(이미지 등) cache-first
+  event.respondWith(
+    caches.match(event.request).then((c) => c || fetch(event.request).then((r) => {
+      if (r.ok) {
+        const cl = r.clone();
+        caches.open(CACHE_NAME).then((ca) => ca.put(event.request, cl));
+      }
+      return r;
+    }))
+  );
+});
+
+// 메인 앱에서 '즉시 SW 교체' 메시지를 보낼 때 처리
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // ============================================================
