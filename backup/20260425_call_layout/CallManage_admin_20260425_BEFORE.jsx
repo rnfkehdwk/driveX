@@ -132,7 +132,81 @@ function CreateCallModal({ onClose, onCreated }) {
           <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: '50%', border: '1px solid #e2e8f0', background: 'white', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
 
-        {/* 고객 / 제휴업체 — 위로 이동 (2026-04-25) */}
+        {/* 출발지 / 도착지 */}
+        <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 10 }}>📍 위치 정보</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8, position: 'relative' }}>
+            <div><label style={ls}>출발지 *</label><textarea value={form.start_address} onChange={set('start_address')} placeholder="출발 주소" rows={2} style={{ ...is, resize: 'none', fontFamily: 'inherit', lineHeight: 1.4 }} /></div>
+            <div style={{ alignSelf: 'end', position: 'relative' }}>
+              <button
+                onClick={() => setShowFreqStart(!showFreqStart)}
+                disabled={frequentStart.length === 0}
+                title={frequentStart.length === 0 ? '자주 가는 곳 없음' : '자주 가는 출발지'}
+                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: frequentStart.length > 0 ? '#fffbeb' : '#f8fafc', color: frequentStart.length > 0 ? '#d97706' : '#cbd5e1', fontSize: 13, fontWeight: 700, cursor: frequentStart.length > 0 ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}
+              >⭐</button>
+              {showFreqStart && frequentStart.length > 0 && (
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, minWidth: 280, maxHeight: 300, overflowY: 'auto', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 출발지</div>
+                  {frequentStart.map((f, i) => (
+                    <div
+                      key={i}
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, start_address: f.address, start_detail: f.detail || prev.start_detail }));
+                        setShowFreqStart(false);
+                      }}
+                      style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#fffbeb'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                    >
+                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{f.address}</div>
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{f.use_count}회 사용</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ alignSelf: 'end' }}><button onClick={() => setAddrSearch('start')} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>🔍</button></div>
+          </div>
+          <div style={{ marginBottom: 8 }}><label style={ls}>출발 상세</label><input value={form.start_detail} onChange={set('start_detail')} placeholder="동/호수 등" style={is} /></div>
+          <KakaoMiniMap startLat={form.start_lat} startLng={form.start_lng} height={160} />
+          <div style={{ height: 1, background: '#e2e8f0', margin: '12px 0' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8, position: 'relative' }}>
+            <div><label style={ls}>도착지 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(미정 가능)</span></label><textarea value={form.end_address} onChange={set('end_address')} placeholder="도착 주소 (비워두면 미정)" rows={2} style={{ ...is, resize: 'none', fontFamily: 'inherit', lineHeight: 1.4 }} /></div>
+            <div style={{ alignSelf: 'end', position: 'relative' }}>
+              <button
+                onClick={() => setShowFreqEnd(!showFreqEnd)}
+                disabled={frequentEnd.length === 0}
+                title={frequentEnd.length === 0 ? '자주 가는 곳 없음' : '자주 가는 도착지'}
+                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: frequentEnd.length > 0 ? '#fffbeb' : '#f8fafc', color: frequentEnd.length > 0 ? '#d97706' : '#cbd5e1', fontSize: 13, fontWeight: 700, cursor: frequentEnd.length > 0 ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}
+              >⭐</button>
+              {showFreqEnd && frequentEnd.length > 0 && (
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, minWidth: 280, maxHeight: 300, overflowY: 'auto', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 도착지</div>
+                  {frequentEnd.map((f, i) => (
+                    <div
+                      key={i}
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, end_address: f.address, end_detail: f.detail || prev.end_detail }));
+                        setShowFreqEnd(false);
+                      }}
+                      style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#fffbeb'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                    >
+                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{f.address}</div>
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{f.use_count}회 사용</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ alignSelf: 'end' }}><button onClick={() => setAddrSearch('end')} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>🔍</button></div>
+          </div>
+          <div><label style={ls}>도착 상세</label><input value={form.end_detail} onChange={set('end_detail')} placeholder="동/호수 등" style={is} /></div>
+          <KakaoMiniMap startLat={form.end_lat} startLng={form.end_lng} height={160} />
+        </div>
+
+        {/* 고객 / 제휴업체 — 검색 input + 자동 드롭다운 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
           {/* 고객 */}
           <div style={{ position: 'relative' }}>
@@ -249,80 +323,6 @@ function CreateCallModal({ onClose, onCreated }) {
               </>
             )}
           </div>
-        </div>
-
-        {/* 출발지 / 도착지 */}
-        <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 10 }}>📍 위치 정보</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8, position: 'relative' }}>
-            <div><label style={ls}>출발지 *</label><textarea value={form.start_address} onChange={set('start_address')} placeholder="출발 주소" rows={2} style={{ ...is, resize: 'none', fontFamily: 'inherit', lineHeight: 1.4 }} /></div>
-            <div style={{ alignSelf: 'end', position: 'relative' }}>
-              <button
-                onClick={() => setShowFreqStart(!showFreqStart)}
-                disabled={frequentStart.length === 0}
-                title={frequentStart.length === 0 ? '자주 가는 곳 없음' : '자주 가는 출발지'}
-                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: frequentStart.length > 0 ? '#fffbeb' : '#f8fafc', color: frequentStart.length > 0 ? '#d97706' : '#cbd5e1', fontSize: 13, fontWeight: 700, cursor: frequentStart.length > 0 ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}
-              >⭐</button>
-              {showFreqStart && frequentStart.length > 0 && (
-                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, minWidth: 280, maxHeight: 300, overflowY: 'auto', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
-                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 출발지</div>
-                  {frequentStart.map((f, i) => (
-                    <div
-                      key={i}
-                      onClick={() => {
-                        setForm(prev => ({ ...prev, start_address: f.address, start_detail: f.detail || prev.start_detail }));
-                        setShowFreqStart(false);
-                      }}
-                      style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#fffbeb'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
-                    >
-                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{f.address}</div>
-                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{f.use_count}회 사용</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ alignSelf: 'end' }}><button onClick={() => setAddrSearch('start')} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>🔍</button></div>
-          </div>
-          <div style={{ marginBottom: 8 }}><label style={ls}>출발 상세</label><input value={form.start_detail} onChange={set('start_detail')} placeholder="동/호수 등" style={is} /></div>
-          <KakaoMiniMap startLat={form.start_lat} startLng={form.start_lng} height={160} />
-          <div style={{ height: 1, background: '#e2e8f0', margin: '12px 0' }} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 8, position: 'relative' }}>
-            <div><label style={ls}>도착지 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(미정 가능)</span></label><textarea value={form.end_address} onChange={set('end_address')} placeholder="도착 주소 (비워두면 미정)" rows={2} style={{ ...is, resize: 'none', fontFamily: 'inherit', lineHeight: 1.4 }} /></div>
-            <div style={{ alignSelf: 'end', position: 'relative' }}>
-              <button
-                onClick={() => setShowFreqEnd(!showFreqEnd)}
-                disabled={frequentEnd.length === 0}
-                title={frequentEnd.length === 0 ? '자주 가는 곳 없음' : '자주 가는 도착지'}
-                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: frequentEnd.length > 0 ? '#fffbeb' : '#f8fafc', color: frequentEnd.length > 0 ? '#d97706' : '#cbd5e1', fontSize: 13, fontWeight: 700, cursor: frequentEnd.length > 0 ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}
-              >⭐</button>
-              {showFreqEnd && frequentEnd.length > 0 && (
-                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, minWidth: 280, maxHeight: 300, overflowY: 'auto', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
-                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 도착지</div>
-                  {frequentEnd.map((f, i) => (
-                    <div
-                      key={i}
-                      onClick={() => {
-                        setForm(prev => ({ ...prev, end_address: f.address, end_detail: f.detail || prev.end_detail }));
-                        setShowFreqEnd(false);
-                      }}
-                      style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#fffbeb'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
-                    >
-                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{f.address}</div>
-                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{f.use_count}회 사용</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ alignSelf: 'end' }}><button onClick={() => setAddrSearch('end')} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>🔍</button></div>
-          </div>
-          <div><label style={ls}>도착 상세</label><input value={form.end_detail} onChange={set('end_detail')} placeholder="동/호수 등" style={is} /></div>
-          <KakaoMiniMap startLat={form.end_lat} startLng={form.end_lng} height={160} />
         </div>
 
         {/* 요금 / 결제 / 메모 */}
