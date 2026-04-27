@@ -5,8 +5,8 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { fetchCustomerMileage } from '../api/client';
-import useTenantConfig from '../hooks/useTenantConfig';
 
+const UNIT = 5000;
 const KRW = (n) => `${Number(n || 0).toLocaleString('ko-KR')}원`;
 
 const pickBalance = (res) => {
@@ -22,9 +22,9 @@ const pickBalance = (res) => {
   return 0;
 };
 
-const computeMax = (totalFare, balance, unit) => {
+const computeMax = (totalFare, balance) => {
   const cap = Math.min(Number(totalFare || 0), Number(balance || 0));
-  return Math.floor(cap / unit) * unit;
+  return Math.floor(cap / UNIT) * UNIT;
 };
 
 export default function MileageUseSelect({
@@ -32,12 +32,8 @@ export default function MileageUseSelect({
   totalFare = 0,
   value = 0,
   onChange,
-  earnPct,  // 섬돌마다 적립률. 전달 안하면 업체 config 값 사용 (양양대리: 10)
+  earnPct = 10,
 }) {
-  const tenantConfig = useTenantConfig();
-  const UNIT = tenantConfig.mileage.useUnitWon;          // 양양대리: 5000, 일반: 1000
-  const effectiveEarnPct = earnPct != null ? Number(earnPct) : Number(tenantConfig.mileage.earnPct || 0);
-
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -66,24 +62,24 @@ export default function MileageUseSelect({
 
   // 운임/잔액 변경 시 현재 선택값 자동 보정
   useEffect(() => {
-    const maxAllowed = computeMax(totalFare, balance, UNIT);
+    const maxAllowed = computeMax(totalFare, balance);
     if (Number(value || 0) > maxAllowed) {
       onChange?.(maxAllowed);
     }
     // eslint-disable-next-line
-  }, [totalFare, balance, UNIT]);
+  }, [totalFare, balance]);
 
-  // 단위(UNIT) 옵션 — 양양대리: 5,000원, 일반: 1,000원
+  // 5,000원 단위 옵션
   const options = useMemo(() => {
-    const max = computeMax(totalFare, balance, UNIT);
+    const max = computeMax(totalFare, balance);
     const arr = [0];
     for (let v = UNIT; v <= max; v += UNIT) arr.push(v);
     return arr;
-  }, [totalFare, balance, UNIT]);
+  }, [totalFare, balance]);
 
   const used = Number(value || 0);
   const netFare = Math.max(0, Number(totalFare || 0) - used);
-  const earnPreview = Math.floor((netFare * effectiveEarnPct) / 100);
+  const earnPreview = Math.floor((netFare * Number(earnPct || 0)) / 100);
 
   // 고객 미선택 시 안내만
   if (!customerId) {
@@ -157,7 +153,7 @@ export default function MileageUseSelect({
         </span>
       </div>
 
-      {/* 마일리지 칩 셀렉터 (양양대리: 5,000원 단위, 일반: 1,000원 단위) */}
+      {/* 5,000원 단위 칩 셀렉터 */}
       <div style={{
         display: 'flex', flexWrap: 'wrap', gap: 6,
         background: '#f8f9fb', borderRadius: 12, border: '1.5px solid #e2e8f0',
@@ -165,7 +161,7 @@ export default function MileageUseSelect({
       }}>
         {options.length === 0 && (
           <div style={{ fontSize: 12, color: '#9ca3af', padding: '4px 0' }}>
-            {balance < UNIT ? `잔액이 ${KRW(UNIT)} 미만` : `운임이 ${KRW(UNIT)} 미만`}
+            {balance < UNIT ? '잔액이 5,000원 미만' : '운임이 5,000원 미만'}
           </div>
         )}
         {options.map((v) => {
@@ -204,8 +200,8 @@ export default function MileageUseSelect({
           <Row label="운임 원금" value={KRW(totalFare)} />
           <Row label="마일리지 사용" value={`- ${KRW(used)}`} color="#dc2626" />
           <Row label="실 결제액" value={KRW(netFare)} bold />
-          {effectiveEarnPct > 0 && (
-            <Row label={`예상 적립 (${effectiveEarnPct}%)`} value={`+ ${KRW(earnPreview)}`} color="#059669" />
+          {earnPct > 0 && (
+            <Row label={`예상 적립 (${earnPct}%)`} value={`+ ${KRW(earnPreview)}`} color="#059669" />
           )}
         </div>
       )}

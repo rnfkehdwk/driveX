@@ -1,1 +1,12 @@
 .claude/
+
+# Vite 프론트에드 환경변수 (카카오 키 등)
+# 프론트에드(mobile, admin/client)의 .env는 빌드 시 인라인되어 코드에 포함됨
+# 실제 키는 각 개발자 마신에서 관리
+# 주의: 루트의 env 파일 (점 없는)과 drivelog-admin/.env (백엔드)는 이 규칙 적용 안 됨
+drivelog-mobile/.env
+drivelog-mobile/.env.local
+drivelog-mobile/.env.*.local
+drivelog-admin/client/.env
+drivelog-admin/client/.env.local
+drivelog-admin/client/.env.*.local

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import useTenantConfig from '../hooks/useTenantConfig';
 import {
   fetchDailyStats,
   fetchMileageStats,
@@ -43,6 +44,7 @@ const pickBalance = (res) => {
 };
 
 export default function Mileage() {
+  const tenantConfig = useTenantConfig();
   // 'daily' | 'customer' | 'balance' (신규)
   const [tab, setTab] = useState('daily');
   const [daily, setDaily] = useState({ data: [], summary: {} });
@@ -181,8 +183,10 @@ export default function Mileage() {
     const amt = Number(adjAmount);
     if (!detailCustomer) return;
     if (!amt || amt <= 0) { alert('금액을 입력하세요.'); return; }
-    if (amt % 5000 !== 0) {
-      const ok = confirm('5,000원 단위가 아닙니다. 그래도 진행하시겠습니까?\n(USE는 백엔드에서 5,000원 단위 검증)');
+    // 마일리지 사용 단위 경고 (양양대리: 5000원, 일반: 1000원)
+    const useUnit = tenantConfig.mileage.useUnitWon;
+    if (amt % useUnit !== 0) {
+      const ok = confirm(`${useUnit.toLocaleString()}원 단위가 아닙니다. 그래도 진행하시겠습니까?\n(USE는 백엔드에서 단위 검증)`);
       if (!ok) return;
     }
     if (adjType === 'USE') {
@@ -554,7 +558,7 @@ export default function Mileage() {
                     <option value="USE">- 차감</option>
                   </select>
                   <input type="number" placeholder="금액" value={adjAmount}
-                    onChange={(e) => setAdjAmount(e.target.value)} step="1000"
+                    onChange={(e) => setAdjAmount(e.target.value)} step={tenantConfig.mileage.adjustStepWon}
                     style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, fontFamily: 'monospace', outline: 'none' }} />
                 </div>
                 <input type="text" placeholder="사유 (선택)" value={adjDesc}

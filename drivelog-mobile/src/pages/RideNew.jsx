@@ -4,8 +4,9 @@ import { createRide, fetchRiders, fetchCustomers, fetchPartners, fetchPaymentTyp
 import AddressSearchModal from '../components/AddressSearchModal';
 import KakaoMiniMap from '../components/KakaoMiniMap';
 import MileageUseSelect from '../components/MileageUseSelect';
+import useTenantConfig from '../hooks/useTenantConfig';
 
-const KAKAO_REST_KEY = '5bfc2766bfe2836aab70ff613c8c05be';
+const KAKAO_REST_KEY = import.meta.env.VITE_KAKAO_REST_KEY;
 const DRAFT_KEY = 'rideDraft';
 
 function formatFare(val) {
@@ -93,6 +94,7 @@ export default function RideNew({ user }) {
   const nav = useNavigate();
   const location = useLocation();
   const fromCall = location.state?.fromCall || null;
+  const tenantConfig = useTenantConfig();
 
   const [riders, setRiders] = useState([]);
   const [userModal, setUserModal] = useState(false);
@@ -283,7 +285,7 @@ export default function RideNew({ user }) {
             customerId={form.customer_id}
             totalFare={parseInt(form.total_fare) || 0}
             value={form.mileage_used}
-            earnPct={10}
+            earnPct={tenantConfig.mileage.earnPct}
             onChange={(v) => up('mileage_used')(v)}
           />
 

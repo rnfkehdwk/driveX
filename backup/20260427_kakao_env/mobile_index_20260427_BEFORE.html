@@ -1,3 +1,13 @@
+<!--
+백업: 2026-04-27 카카오 키 환경변수 분리 작업 전 mobile index.html 원본
+변경 사유: appkey=b1e4... → appkey=%VITE_KAKAO_JS_KEY%
+원본: drivelog-mobile/index.html
+git: git show HEAD:drivelog-mobile/index.html
+
+핵심 변경:
+변경 전: <script ... src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=b1e43fe40464bf365f6122749187c09a&libraries=services&autoload=false"></script>
+변경 후: <script ... src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=%VITE_KAKAO_JS_KEY%&libraries=services&autoload=false"></script>
+-->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -11,7 +21,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <!-- 카카오맵 SDK -->
-  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=%VITE_KAKAO_JS_KEY%&libraries=services&autoload=false"></script>
+  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=b1e43fe40464bf365f6122749187c09a&libraries=services&autoload=false"></script>
 </head>
 <body>
   <div id="root"></div>

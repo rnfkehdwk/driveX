@@ -1,0 +1,35 @@
+// GET /api/calls/frequent-addresses?type=start|end&limit=20
+// 자주 사용한 출발지/도착지 top N (최근 90일)
+// 콜생성 입력 시 즐겨찾기/자동완성용
+router.get('/frequent-addresses', authenticate, async (req, res) => {
+  try {
+    const type = req.query.type === 'end' ? 'end_address' : 'start_address';
+    const detailCol = type === 'end_address' ? 'end_detail' : 'start_detail';
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const days = Math.min(parseInt(req.query.days) || 90, 365);
+
+    // 빈 주소, 검증용 데이터 제외
+    const [rows] = await pool.execute(
+      `SELECT ${type} AS address,
+              MAX(${detailCol}) AS detail,
+              COUNT(*) AS use_count,
+              MAX(created_at) AS last_used_at
+       FROM calls
+       WHERE company_id = ?
+         AND ${type} IS NOT NULL
+         AND ${type} != ''
+         AND ${type} NOT LIKE '%자동검증%'
+         AND ${type} NOT LIKE '%검증%'
+         AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       GROUP BY ${type}
+       ORDER BY use_count DESC, last_used_at DESC
+       LIMIT ?`,
+      [req.user.company_id, days, limit]
+    );
+
+    res.json({ data: rows, type: req.query.type === 'end' ? 'end' : 'start' });
+  } catch (err) {
+    console.error('GET /calls/frequent-addresses error:', err);
+    res.status(500).json({ error: '자주 가는 곳 조회 실패' });
+  }
+});

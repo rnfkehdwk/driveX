@@ -89,10 +89,6 @@ export default function Login({ onLogin }) {
       <div style={{ background: 'white', borderRadius: 20, padding: '32px 24px', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>업체코드</label>
-            <input style={S.input} placeholder="YANGYANG01" value={form.company_code} onChange={set('company_code')} />
-          </div>
-          <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>아이디</label>
             <input style={S.input} placeholder="로그인 ID" required value={form.login_id} onChange={set('login_id')} />
           </div>

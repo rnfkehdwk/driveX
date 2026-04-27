@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { fetchDailySettlement, fetchMonthlyPayout } from '../api/client';
 import { exportToExcel, FARE_SETTLEMENT_COLUMNS } from '../utils/excel';
+import useTenantConfig from '../hooks/useTenantConfig';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => {
@@ -19,11 +20,12 @@ const daysBetween = (a, b) => {
 };
 
 // 운임정산서 공유 텍스트 생성 (카카오톡, 문자 등)
-function buildShareText(data, startDate, endDate, companyName, fmt) {
+// fallbackName: companyName이 없을 때 표시할 기본 (업체 config의 brand.shortName)
+function buildShareText(data, startDate, endDate, companyName, fmt, fallbackName) {
   const isRange = startDate !== endDate;
   const periodLabel = isRange ? `${startDate} ~ ${endDate}` : startDate;
   const lines = [];
-  lines.push(`📊 [${companyName || '대리업체'}] 운임정산서`);
+  lines.push(`📊 [${companyName || fallbackName}] 운임정산서`);
   lines.push(`📅 ${periodLabel}`);
   lines.push('');
   lines.push(`💰 총 매출: ${fmt(data.total.fare)}원 (${data.total.count}건)`);
@@ -68,6 +70,8 @@ async function shareSettlement(text) {
 // 일별 정산 탭 — 기존 운임정산 컴포넌트 (시작일~종료일 범위)
 // ============================================================
 function DailyTab() {
+  const tenantConfig = useTenantConfig();
+  const fallbackBrand = tenantConfig.brand.shortName;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState(today);
@@ -120,7 +124,7 @@ function DailyTab() {
       <div className="print-only" style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '2px solid #1e293b' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
-            {(() => { try { return JSON.parse(localStorage.getItem('user') || '{}').company_name || '대리업체'; } catch { return '대리업체'; } })()} 운임정산서
+            {(() => { try { return JSON.parse(localStorage.getItem('user') || '{}').company_name || fallbackBrand; } catch { return fallbackBrand; } })()} 운임정산서
           </h1>
           <div style={{ fontSize: 12, color: '#64748b' }}>인쇄: {new Date().toLocaleString('ko-KR')}</div>
         </div>
@@ -148,9 +152,9 @@ function DailyTab() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             onClick={() => {
-              let companyName = '대리업체';
+              let companyName = fallbackBrand;
               try { companyName = JSON.parse(localStorage.getItem('user') || '{}').company_name || companyName; } catch {}
-              const text = buildShareText(data, startDate, endDate, companyName, fmt);
+              const text = buildShareText(data, startDate, endDate, companyName, fmt, fallbackBrand);
               shareSettlement(text);
             }}
             disabled={data.rides.length === 0}
@@ -315,6 +319,8 @@ function DailyTab() {
 // 월별 정산 탭 — 기사별 월말 정산 내역서 (자동 계산)
 // ============================================================
 function MonthlyTab() {
+  const tenantConfig = useTenantConfig();
+  const fallbackBrand = tenantConfig.brand.shortName;
   const [month, setMonth] = useState(currentMonth);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -341,7 +347,7 @@ function MonthlyTab() {
   const buildMonthlyShareText = () => {
     if (!data) return '';
     const lines = [];
-    let companyName = '대리업체';
+    let companyName = fallbackBrand;
     try { companyName = JSON.parse(localStorage.getItem('user') || '{}').company_name || companyName; } catch {}
     lines.push(`📊 [${companyName}] ${month} 월별 정산`);
     lines.push('');
@@ -399,7 +405,7 @@ function MonthlyTab() {
       <div className="print-only" style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '2px solid #1e293b' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
-            {(() => { try { return JSON.parse(localStorage.getItem('user') || '{}').company_name || '대리업체'; } catch { return '대리업체'; } })()} {month} 월별 정산서
+            {(() => { try { return JSON.parse(localStorage.getItem('user') || '{}').company_name || fallbackBrand; } catch { return fallbackBrand; } })()} {month} 월별 정산서
           </h1>
           <div style={{ fontSize: 12, color: '#64748b' }}>인쇄: {new Date().toLocaleString('ko-KR')}</div>
         </div>

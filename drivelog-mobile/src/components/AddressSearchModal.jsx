@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-const KAKAO_REST_KEY = '5bfc2766bfe2836aab70ff613c8c05be';
+const KAKAO_REST_KEY = import.meta.env.VITE_KAKAO_REST_KEY;
 
 async function searchKeyword(query, lng, lat) {
   const params = new URLSearchParams({ query, size: 15 });

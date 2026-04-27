@@ -229,10 +229,6 @@ export default function Login({ onLogin, onRegister }) {
         </div>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 6 }}>업체코드 <span style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8' }}>(선택)</span></label>
-            <input style={inputStyle} placeholder="평소엔 비워두셔도 됩니다" value={form.company_code} onChange={e => setForm(f => ({ ...f, company_code: e.target.value }))} onFocus={e => e.target.style.borderColor = '#2563eb'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
-          </div>
-          <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 6 }}>아이디</label>
             <input style={inputStyle} placeholder="로그인 ID" required value={form.login_id} onChange={e => setForm(f => ({ ...f, login_id: e.target.value }))} onFocus={e => e.target.style.borderColor = '#2563eb'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
           </div>

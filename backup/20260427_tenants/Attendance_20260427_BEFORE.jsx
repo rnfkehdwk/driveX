@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchAttendance, createAttendance, deleteAttendance, fetchRiders } from '../api/client';
-import useTenantConfig from '../hooks/useTenantConfig';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => {
@@ -13,26 +12,16 @@ const yesterday = () => {
   return d.toISOString().slice(0, 10);
 };
 
-// 근무시간 옵션 — 업체 config의 minHourUnit/maxHours에 따라 동적 생성
-// 양양대리: 0.5h 단위 (0, 0.5, 1, ..., 24)
-// 일반 업체: 1h 단위 (0, 1, 2, ..., 24)
-function buildHourOptions(minHourUnit, maxHours) {
+// 0.5시간 단위 옵션 (0 ~ 24)
+const HOUR_OPTIONS = (() => {
   const out = [];
-  const steps = Math.round(maxHours / minHourUnit);
-  for (let i = 0; i <= steps; i++) {
-    out.push(i * minHourUnit);
+  for (let i = 0; i <= 48; i++) {
+    out.push(i / 2);
   }
   return out;
-}
+})();
 
 export default function Attendance() {
-  const config = useTenantConfig();
-  // 업체별 단위에 맞춰 시간 옵션 동적 생성 (양양대리: 0.5h, 일반: 1h)
-  const HOUR_OPTIONS = useMemo(
-    () => buildHourOptions(config.attendance.minHourUnit, config.attendance.maxHours),
-    [config.attendance.minHourUnit, config.attendance.maxHours]
-  );
-
   const [riders, setRiders] = useState([]);
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -127,7 +116,7 @@ export default function Attendance() {
     <div className="fade-in">
       {/* 안내 */}
       <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '12px 16px', marginBottom: 14, fontSize: 13, color: '#1e40af' }}>
-        💡 시급제 업체용 — 기사별 근무시간을 {config.attendance.minHourUnit}시간 단위로 입력하세요. 입력한 시간은 <strong>운임 정산 → 월별 정산</strong>에 자동 반영됩니다.
+        💡 시급제 업체용 — 기사별 근무시간을 0.5시간 단위로 입력하세요. 입력한 시간은 <strong>운임 정산 → 월별 정산</strong>에 자동 반영됩니다.
       </div>
 
       {/* 입력 카드 */}
@@ -171,7 +160,7 @@ export default function Attendance() {
 
           {/* 근무시간 셀렉트 */}
           <div>
-            <label style={ls}>근무시간 ({config.attendance.minHourUnit}h 단위)</label>
+            <label style={ls}>근무시간 (0.5h 단위)</label>
             <select
               value={form.calculated_hours}
               onChange={e => setForm(f => ({ ...f, calculated_hours: Number(e.target.value) }))}
