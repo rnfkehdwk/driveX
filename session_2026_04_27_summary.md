@@ -242,3 +242,248 @@ npm run deploy:mobile     # CallList.jsx
 ### 새 업체 추가 준비
 - companies.slug 컴럼 추가 (필요 시 URL 분리용 인프라)
 - 실제 새 업체 가입 시 tenants/{slug}/config.js 생성 및 index.js 매핑 추가
+
+---
+
+# 🌙 달아서 세션 (2026-04-27 밤 ~ 2026-04-28 새벽)
+
+## 추가로 완료한 작업 (총 4건)
+
+다음날 아침까지 이어진 세션에서 추가 작업 다수 수행.
+
+---
+
+### 작업 6: 콜 수락 취소 시 대기 복구 버그 수정 (backend)
+
+**문제**: SUPER_ADMIN(사장님)이 모바일에서 직접 콜 수락 → 수락 취소를 눌러도 콜이 CANCELLED로 영구 취소되고 다른 기사에게 다시 노출되지 않음.
+
+**원인**: `PUT /api/calls/:id/cancel` 엔드포인트가 역할 기준으로만 분기. RIDER만 WAITING으로 복구, 나머지(SA 포함)는 무조건 CANCELLED.
+
+**해결**: `drivelog-admin/server/routes/calls.js` 분기 기준을 "역할"에서 "본인이 수락한 콜인가"로 변경:
+- 본인 수락 콜 (ASSIGNED/IN_PROGRESS && assigned_rider_id === me) → WAITING 복구 (RIDER, SUPER_ADMIN 동일)
+- 그 외 SA/MASTER → CANCELLED 영구 취소
+- audit log에 CALL_RELEASE / CALL_CANCEL 구분 기록 추가
+- CANCELLED 중복 취소 방어 (400)
+
+**백업**: `C:\Drivelog\backup\calls_20260427_1104.js`
+
+---
+
+### 작업 7: 모바일 SA 고객 수정 기능 (mobile)
+
+**문제**: 모바일 고객 조회 화면에서 SA 계정이 고객을 수정할 수 없음 (단순 조회만 가능했던 이유: 원래 기사용 PWA로 설계되었고 SA는 admin 웹에서 수정하는 구조였음).
+
+**해결**: 동일 세션에서 이어진 Contact Picker 확장과 병행.
+
+#### 변경 파일 (3개)
+| 파일 | 변경 |
+|---|---|
+| `drivelog-mobile/src/api/client.js` | `updateCustomer(id, body)` 함수 추가 |
+| `drivelog-mobile/src/pages/CustomerNew.jsx` | 연락처 라벨 옆에 픽커 버튼 추가 (Android Chrome HTTPS 한정) |
+| `drivelog-mobile/src/pages/CustomerList.jsx` | SA/MASTER 한정 카드 탭 → 수정 모달, 모달에 픽커 버튼 포함 |
+
+#### 권한 정책
+- 고객 수정은 SA/MASTER만 가능 (백엔드 PUT /customers/:id 권한 그대로)
+- RIDER에게는 모바일에서도 수정 버튼/액션 비노출 (카드 cursor: default, 탭 핸들러 없음, `›` 화살표 없음)
+- 백엔드 customers.js 변경 없음
+
+**백업**: `C:\Drivelog\backup\20260427_mobile_customer_edit\`
+
+---
+
+### 작업 8: PWA 캐시 자동 갱신 인프라 구축 (mobile)
+
+**문제**: PWA(홈화면에 추가된 앱) 사용자는 새 빌드 배포해도 옛 캐시된 코드가 계속 뜨면서 새 기능이 반영 안 됨. Contact Picker 이전부터 떨어져있던 문제가 이번에 고객 조회 수정 작업 검증 시 드러남.
+
+**근본 원인**:
+1. sw.js의 `CACHE_NAME = 'drivelog-v2.4'` 고정 → 빌드해도 sw.js가 안 바뀌면 브라우저가 새 SW를 안 받음
+2. HTML이 SW에 의해 캐시됨 → 새 JS 해시 파일명을 못 알게 됨
+3. SW 업데이트 체크가 안 일어남 → PWA가 백그라운드에 살아있으면 영원히 옛 버전
+
+**해결 전략 (1~4번 + 5번 적용)**:
+1. `__BUILD_ID__`를 sw.js에 자동 주입 (vite plugin) → 매 빌드마다 sw.js 자체 변경
+2. HTML은 SW 캐시 대상에서 완전 제외 (`fetch: cache: 'no-store'`)
+3. SW 등록 후 60분마다 + visibilitychange 복귀 시 `registration.update()`
+4. 새 SW 설치 완료 시 메인 앱에 메시지 (`drivelog:sw-update-ready` CustomEvent)
+5. App.jsx의 `UpdateToast` 컴포넌트가 "✨ 새 버전이 설치되었어요 [새로고침]" 표시 → 사용자 동의 후 SKIP_WAITING → controllerchange → 자동 reload
+
+#### 변경 파일 (4개)
+| 파일 | 변경 |
+|---|---|
+| `drivelog-mobile/vite.config.js` | `__BUILD_ID__` define + `injectSwBuildId` plugin (writeBundle 후처리로 sw.js 치환) |
+| `drivelog-mobile/public/sw.js` | v3.0 — BUILD_ID 기반 CACHE_NAME, HTML network-only, JS/CSS cache-first (해시 파일명), SKIP_WAITING 메시지 핸들러 |
+| `drivelog-mobile/index.html` | SW 등록 후 60분 polling, visibilitychange 시 update, controllerchange 자동 reload |
+| `drivelog-mobile/src/App.jsx` | `UpdateToast` 컴포넌트 추가 + `<UpdateToast />` 마운트 |
+
+#### 동작 매커니즘
+```
+[빌드]
+  vite build → injectSwBuildId가 sw.js의 __BUILD_ID__ 자리에 타임스탬프(36진) 주입
+          → 매 빌드마다 sw.js 파일 자체가 변함
+
+[사용자 PWA]
+  60분/포커스 시 → registration.update() → 새 SW 자동 다운로드 + 설치
+          → 'installed' 상태 + controller 존재 시 dispatchEvent('drivelog:sw-update-ready')
+          → UpdateToast 표시
+          → 사용자 [새로고침] 탭
+          → reg.waiting.postMessage('SKIP_WAITING') → SW 즉시 활성화
+          → controllerchange → window.location.reload()
+          → 새 index.html → 새 JS 해시 파일명 로드
+```
+
+#### 사용자 UX 보호
+- 입력 도중 갑자기 reload 안 됨 (토스트로 동의 요청)
+- 토스트 [✕] 닫아도 임시 사라질 뿐, 다음에 PWA 다시 열 때 자동 반영
+- 첫 설치 시에는 토스트 안 뜸 (controller 없을 때 쪽게만 trigger)
+
+#### 최초 1회 수동 조치 (폰)
+기존 PWA에는 옛 SW(`drivelog-v2.4`)가 깔려있어 이번 한 번만 완전 재설치 필요:
+1. PWA 아이콘 길게 눌러 제거
+2. Chrome 설정 → 사이트 설정 → `rnfkehdwk.synology.me` → 저장공간 삭제
+3. (권장) `chrome://serviceworker-internals/`에서 Unregister
+4. Chrome 완전 종료 → 재실행 → 새로 접속 → "홈화면에 추가"
+
+이후 모든 배포는 PWA 에서 자동 반영 (최대 60분 이내 또는 앱 포커스 시 즉시).
+
+**백업**: `C:\Drivelog\backup\20260427_pwa_cache_fix\`
+
+---
+
+### 작업 9: Contact Picker 통일 — 나머지 입력 화면 포함 (mobile)
+
+**문제**: 이전 Contact Picker 작업에서 고객 관련 3곳만 적용 → 사용자 궁극 의도는 "전화번호 입력하는 모든 곳". 기사 등록, 제휴업체 등록/수정에도 필요.
+
+**해결**: 다른 화면 2곳에도 동일 패턴 적용.
+
+#### 변경 파일 (2개)
+| 파일 | 변경 |
+|---|---|
+| `drivelog-mobile/src/pages/RiderNew.jsx` | `normalizeKoreanPhone`, `supportsContactPicker`, `handlePickContact` 추가, phone 칸 옆 파란색 픽커 버튼 |
+| `drivelog-mobile/src/pages/PartnerList.jsx` | 동일 패턴, 모달안 phone 칸 옆 보라색 픽커 버튼 (페이지 테마 일치). 등록/수정이 같은 모달 공유라 한 번에 양쪽 적용 |
+
+#### 화면별 값 채우기 동작
+| 화면 | 픽커 선택 시 채우는 필드 | 이유 |
+|---|---|---|
+| 고객 등록 (CustomerNew, CallList 인라인) | name + phone (이름 비어있을 때) | 이름 = 고객 이름 |
+| 고객 수정 (CustomerList 모달) | phone만 | 수정 모달, 이름 이미 채움 |
+| 기사 등록 (RiderNew) | name + phone (이름 비어있을 때) | 이름 = 기사 이름 |
+| 제휴업체 (PartnerList) | phone + contact_person (담당자 비어있을 때) | name은 *업체명*, 픽커의 사람 이름은 담당자로 감 |
+
+#### 적용 완료 후 전체 위치 (5곳)
+1. 콜 생성 모달 → 신규 고객 인라인 등록 (CallList.jsx) — 세션 1
+2. 고객 등록 페이지 (CustomerNew.jsx) — 세션 2 작업 7
+3. 고객 조회 → SA 한정 카드 탭 → 수정 모달 (CustomerList.jsx) — 세션 2 작업 7
+4. 기사 등록 페이지 (RiderNew.jsx) — 세션 2 작업 9
+5. 제휴업체 등록/수정 모달 (PartnerList.jsx) — 세션 2 작업 9
+
+**백업**: `C:\Drivelog\backup\20260427_picker_extension\`
+
+---
+
+## 달아서 세션 배포 명령
+
+```bash
+cd /c/drivelog
+npm run deploy:server   # 작업 6 — calls.js cancel 분기 수정
+npm run deploy:mobile   # 작업 7, 8, 9 — 모바일 전반
+```
+
+또는 `npm run deploy:all` 한 방에.
+
+배포 로그에서 확인해야 하는 핵심 메시지:
+```
+[inject-sw-build-id] sw.js BUILD_ID = lz4q8k    ← 매 배포마다 다름
+```
+
+---
+
+## 달아서 세션 검증 체크리스트
+
+### 작업 6 — 콜 수락 취소
+- [ ] SA 모바일에서 콜 직접 수락 → 수락 취소 → 해당 콜이 다시 대기 목록에 뜨고, 다른 기사도 볼 수 있음
+- [ ] RIDER가 콜 수락 → 수락 취소 → 동일하게 대기 복구 (기존 동작 유지)
+- [ ] SA가 대기 중 콜에서 "취소" 클릭 → CANCELLED 영구 취소 (기존 동작 유지)
+- [ ] RIDER가 남의 수락 콜 취소 시도 → 403 거부 (기존 동작 유지)
+
+### 작업 7 — 모바일 고객 수정
+- [v] SA 모바일 고객 조회 → "탭하여 수정" 안내 + `›` 화살표 표시
+- [v] 카드 탭 → 수정 모달 열림 + 기존 값 미리 채움
+- [v] 이름/연락처/주소/메모 수정 후 저장 → 목록 반영
+- [v] RIDER는 카드 탭해도 모달 안 열림 (수정 불가)
+
+### 작업 8 — PWA 캐시 자동 갱신
+- [v] 폰 PWA 1회성 재설치 후 새 코드 정상 로드
+- [ ] 다음 배포 후 60분 이내 또는 앱 포커스 시 "✨ 새 버전이 설치되었어요" 토스트 자동 표시
+- [ ] [새로고침] 버튼 탭 → 자동 reload → 새 코드 적용
+- [ ] 첫 설치 시에는 토스트 안 뜨는지 확인
+
+### 작업 9 — Contact Picker 통일
+- [v] 고객 조회 수정 모달에서 픽커 버튼 동작 (세션 2 작업 7에서 검증 완료)
+- [v] 고객 등록 페이지에서 픽커 버튼 동작 (세션 2 작업 7에서 검증 완료)
+- [ ] 기사 등록 (`/m/rider/new`) → 연락처 옆 파란색 픽커 버튼 → 탭 → 이름+번호 자동 채움
+- [ ] 제휴업체 관리 → "+ 등록" 또는 기존 항목 탭 → 모달의 연락처 옆 보라색 픽커 버튼 → 탭 → 번호+담당자 자동 채움
+
+---
+
+## 달아서 세션 교훈 (이후 세션에서 기억할 것)
+
+### 교훈 1: "전화번호 입력하는 모든 곳"은 자명하지 않다
+이번 세션 작업 7에서 Contact Picker를 "고객 관련 화면 3곳"으로 적용했으나, 사용자 의도는 "모든 곳"이었음. 작업 9에서 그 누락이 드러나 추가 2곳 더 적용.
+
+**함의**: 다음에 "X 기능을 모든 Y에 적용" 요구가 오면 **작업 전 전수 조사 결과 리스트를 명시적으로 확인받을 것**:
+- "전화번호 입력 화면 모두 조사 결과 고객·기사·제휴업체 5곳 나왔습니다. 이 모두에 적용할까요?"
+
+### 교훈 2: PWA 캐시 문제는 "코드는 맞은데 안 보임" 패턴으로 나타남
+세션 1에서 Contact Picker 코드를 추가했으나 사용자가 "한 번도 안 보였다"고 함. 대부분 PWA 캐시 문제임. NAS에 코드는 정상 있으나 PWA에는 옛 널이 박혀 있음.
+
+**진단 방법**:
+1. NAS에서 `grep -o "키워드" assets/*.js | wc -l`  — `grep -c`는 minify된 한줄 파일을 1로 세서 잘못된 수치가 나옴
+2. 일반 Chrome 탭 시크릿에서 검증 → 보이면 PWA 캐시 확정
+3. 이번 작업 8의 자동 갱신 인프라가 들어가 있으므로 앞으로는 다시 발생하지 않을 것
+
+### 교훈 3: minified JS에 `grep -c`는 항상 1
+```bash
+# 잘못된 방법
+grep -c "연락처에서 가져오기" assets/index-*.js   # 항상 1 나옴 (라인 컴)
+
+# 올바른 방법
+grep -o "연락처에서 가져오기" assets/index-*.js | wc -l   # 실제 등장 횟수
+```
+
+### 교훈 4: vite plugin으로 writeBundle 후처리는 public/ 정적 파일에도 동작
+sw.js는 `public/` 폴더에 있어서 단순 복사됨. transform 훅은 안 먹으므로 `writeBundle` 훅에서 출력 폴더의 파일을 찾아 직접 readFile/writeFile로 치환해야 함. 이 패턴은 앞으로 다른 정적 파일 동적 치환에도 재사용 가능.
+
+---
+
+## 달아서 세션 배포 후 명시적 1회성 조치 (사용자)
+
+### 폰에서 기존 PWA 완전 재설치 (한 번만)
+이번 PWA 캐시 인프라 최초 적용 시에는 옛 SW(`drivelog-v2.4`)가 새 SW 메커니즘을 모르므로 **단 한 번만** 수동 조치 필요:
+
+```
+1. 홈화면 PWA 아이콘 기게 눌러 제거
+2. Chrome 메뉴 → 설정 → 사이트 설정 → rnfkehdwk.synology.me → 저장공간 삭제
+3. (권장) chrome://serviceworker-internals/ 에서 rnfkehdwk Unregister
+4. Chrome 완전 종료 (최근 앱 목록에서 스와이프)
+5. Chrome 재실행 → https://rnfkehdwk.synology.me:38443/m/ → 로그인 → 홈화면에 추가
+```
+
+이후 변경은 모두 자동 반영 (최대 60분 이내 또는 앱 포커스 시 즉시).
+
+---
+
+## 달아서 세션 이후 다음 단계
+
+### 단기 (다음 세션 추천)
+- [ ] 작업 6 검증 체크리스트 완료 (콜 수락 취소 동작)
+- [ ] 작업 9 검증 체크리스트 완료 (기사/제휴업체 픽커)
+- [ ] PWA 자동 갱신 실제 동작 관찰 (다음 배포 후 토스트 뜨는지)
+
+### 중기
+- [ ] PII Phase 2 재개 결정 (경험 있는 개발자 조언 이후)
+- [ ] PHASE1 (볼륨 암호화 + DB 포트 차단) — 개발 주기 끝
+
+### 참고
+- diag.html은 운영에 영향 없이 남겨둔 상태 (향후 브라우저 환경 디버깅에 재활용 가능)
+- 필요 시 제거: `drivelog-mobile/public/diag.html`
+
