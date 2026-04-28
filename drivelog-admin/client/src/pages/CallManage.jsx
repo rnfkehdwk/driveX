@@ -47,12 +47,26 @@ function CreateCallModal({ onClose, onCreated }) {
         setForm(f => ({ ...f, payment_type_id: list[0].payment_type_id, payment_method: list[0].code }));
       }
     }).catch(() => {});
-    // 자주 가는 출발지/도착지 로드
-    fetchFrequentAddresses({ type: 'start', limit: 15 }).then(r => setFrequentStart(r.data || [])).catch(() => {});
-    fetchFrequentAddresses({ type: 'end', limit: 15 }).then(r => setFrequentEnd(r.data || [])).catch(() => {});
     // 기사 목록 로드 (수동 지명용)
     fetchRiders().then(r => setRiders(r.data || [])).catch(() => {});
   }, []);
+
+  // 고객별 자주 가는 곳 로드 — selectedCust 변경 시 재호출 (top 3)
+  // 고객 미선택 시에는 비움 (고객별 특화 기능이므로)
+  useEffect(() => {
+    if (!selectedCust?.customer_id) {
+      setFrequentStart([]);
+      setFrequentEnd([]);
+      return;
+    }
+    const cid = selectedCust.customer_id;
+    fetchFrequentAddresses({ type: 'start', limit: 3, customer_id: cid })
+      .then(r => setFrequentStart(r.data || []))
+      .catch(() => setFrequentStart([]));
+    fetchFrequentAddresses({ type: 'end', limit: 3, customer_id: cid })
+      .then(r => setFrequentEnd(r.data || []))
+      .catch(() => setFrequentEnd([]));
+  }, [selectedCust?.customer_id]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -259,18 +273,33 @@ function CreateCallModal({ onClose, onCreated }) {
             <div style={{ alignSelf: 'end', position: 'relative' }}>
               <button
                 onClick={() => setShowFreqStart(!showFreqStart)}
-                disabled={frequentStart.length === 0}
-                title={frequentStart.length === 0 ? '자주 가는 곳 없음' : '자주 가는 출발지'}
-                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: frequentStart.length > 0 ? '#fffbeb' : '#f8fafc', color: frequentStart.length > 0 ? '#d97706' : '#cbd5e1', fontSize: 13, fontWeight: 700, cursor: frequentStart.length > 0 ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}
+                title="고객별 자주 가는 출발지 (top 3)"
+                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#d97706', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
               >⭐</button>
-              {showFreqStart && frequentStart.length > 0 && (
+              {showFreqStart && (
                 <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, minWidth: 280, maxHeight: 300, overflowY: 'auto', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
-                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 출발지</div>
-                  {frequentStart.map((f, i) => (
+                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 출발지 {selectedCust && `· ${selectedCust.name}`}</div>
+                  {!selectedCust ? (
+                    <div style={{ padding: '20px 14px', fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 1.6 }}>
+                      고객을 먼저 선택해주세요.<br />
+                      <span style={{ color: '#cbd5e1' }}>고객별로 자주 가는 곳이 표시됩니다.</span>
+                    </div>
+                  ) : frequentStart.length === 0 ? (
+                    <div style={{ padding: '20px 14px', fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 1.6 }}>
+                      최근 90일 간 {selectedCust.name}님의 콜 데이터가 없습니다.
+                    </div>
+                  ) : frequentStart.map((f, i) => (
                     <div
                       key={i}
                       onClick={() => {
-                        setForm(prev => ({ ...prev, start_address: f.address, start_detail: f.detail || prev.start_detail }));
+                        setForm(prev => ({
+                          ...prev,
+                          start_address: f.address,
+                          start_detail: f.detail || prev.start_detail,
+                          // 좌표도 같이 복원 (2026-04-28)
+                          start_lat: f.lat ? parseFloat(f.lat) : prev.start_lat,
+                          start_lng: f.lng ? parseFloat(f.lng) : prev.start_lng,
+                        }));
                         setShowFreqStart(false);
                       }}
                       style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
@@ -294,18 +323,33 @@ function CreateCallModal({ onClose, onCreated }) {
             <div style={{ alignSelf: 'end', position: 'relative' }}>
               <button
                 onClick={() => setShowFreqEnd(!showFreqEnd)}
-                disabled={frequentEnd.length === 0}
-                title={frequentEnd.length === 0 ? '자주 가는 곳 없음' : '자주 가는 도착지'}
-                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: frequentEnd.length > 0 ? '#fffbeb' : '#f8fafc', color: frequentEnd.length > 0 ? '#d97706' : '#cbd5e1', fontSize: 13, fontWeight: 700, cursor: frequentEnd.length > 0 ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}
+                title="고객별 자주 가는 도착지 (top 3)"
+                style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#d97706', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
               >⭐</button>
-              {showFreqEnd && frequentEnd.length > 0 && (
+              {showFreqEnd && (
                 <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, minWidth: 280, maxHeight: 300, overflowY: 'auto', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
-                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 도착지</div>
-                  {frequentEnd.map((f, i) => (
+                  <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>⭐ 자주 가는 도착지 {selectedCust && `· ${selectedCust.name}`}</div>
+                  {!selectedCust ? (
+                    <div style={{ padding: '20px 14px', fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 1.6 }}>
+                      고객을 먼저 선택해주세요.<br />
+                      <span style={{ color: '#cbd5e1' }}>고객별로 자주 가는 곳이 표시됩니다.</span>
+                    </div>
+                  ) : frequentEnd.length === 0 ? (
+                    <div style={{ padding: '20px 14px', fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 1.6 }}>
+                      최근 90일 간 {selectedCust.name}님의 콜 데이터가 없습니다.
+                    </div>
+                  ) : frequentEnd.map((f, i) => (
                     <div
                       key={i}
                       onClick={() => {
-                        setForm(prev => ({ ...prev, end_address: f.address, end_detail: f.detail || prev.end_detail }));
+                        setForm(prev => ({
+                          ...prev,
+                          end_address: f.address,
+                          end_detail: f.detail || prev.end_detail,
+                          // 좌표도 같이 복원 (2026-04-28)
+                          end_lat: f.lat ? parseFloat(f.lat) : prev.end_lat,
+                          end_lng: f.lng ? parseFloat(f.lng) : prev.end_lng,
+                        }));
                         setShowFreqEnd(false);
                       }}
                       style={{ padding: '10px 14px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}

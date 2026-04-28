@@ -1,8 +1,8 @@
 // DriveLog Mobile PWA Service Worker
 // v3.0 - 2026-04-27: PWA 캐시 자동 갱신 인프라
-// mohdyrll는 vite injectSwBuildId 플러그인이 빌드 시점에 치환하므로
+// moivekl3는 vite injectSwBuildId 플러그인이 빌드 시점에 치환하므로
 // 매 빌드마다 sw.js 자체가 바이트 단위로 달라짐 → 브라우저가 새 SW 자동 감지
-const BUILD_ID = 'mohdyrll';
+const BUILD_ID = 'moivekl3';
 const CACHE_NAME = `drivelog-${BUILD_ID}`;
 
 // 정적 자산만 캐시 (HTML은 의도적으로 제외 — 항상 네트워크에서 받아 새 JS 해시 파일명 갱신)

@@ -5,6 +5,7 @@ import Home from './pages/Home';
 import RideNew from './pages/RideNew';
 import RideList from './pages/RideList';
 import RiderNew from './pages/RiderNew';
+import RiderList from './pages/RiderList';
 import CustomerNew from './pages/CustomerNew';
 import CustomerList from './pages/CustomerList';
 import PartnerList from './pages/PartnerList';
@@ -149,6 +150,7 @@ export default function App() {
         <Route path="/ride/new" element={<Guard user={user}>{isExpired ? <BlockedPage user={user} onContact={() => setShowInquiry(true)} /> : <RideNew user={user} />}</Guard>} />
         <Route path="/ride/list" element={<Guard user={user}>{isExpired ? <BlockedPage user={user} onContact={() => setShowInquiry(true)} /> : <RideList />}</Guard>} />
         <Route path="/rider/new" element={<Guard user={user}>{isExpired ? <BlockedPage user={user} onContact={() => setShowInquiry(true)} /> : <RiderNew />}</Guard>} />
+        <Route path="/rider/list" element={<Guard user={user}>{isExpired ? <BlockedPage user={user} onContact={() => setShowInquiry(true)} /> : <RiderList />}</Guard>} />
         <Route path="/customer/new" element={<Guard user={user}>{isExpired ? <BlockedPage user={user} onContact={() => setShowInquiry(true)} /> : <CustomerNew />}</Guard>} />
         <Route path="/customer/list" element={<Guard user={user}>{isExpired ? <BlockedPage user={user} onContact={() => setShowInquiry(true)} /> : <CustomerList />}</Guard>} />
         <Route path="/partner/list" element={<Guard user={user}>{isExpired ? <BlockedPage user={user} onContact={() => setShowInquiry(true)} /> : <PartnerList />}</Guard>} />

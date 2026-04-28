@@ -74,36 +74,55 @@ router.get('/waiting-count', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ error: '조회 실패' }); }
 });
 
-// GET /api/calls/frequent-addresses?type=start|end&limit=20
-// 자주 사용한 출발지/도착지 top N (최근 90일)
-// 콜생성 입력 시 즐겨찾기/자동완성용
+// GET /api/calls/frequent-addresses?type=start|end&limit=20&customer_id=N
+// 고객별 특화 자주 가는 움직 임 (customer_id 필수 아닌 수다로 이용 가능)
+// - customer_id가 있으면: 해당 고객의 콜만 필터링 (top 3 권장)
+// - customer_id가 없으면: 회사 전체 (기동)
+// - 조건 동일: 최근 90일, 빈 주소 제외
 router.get('/frequent-addresses', authenticate, async (req, res) => {
   try {
     const type = req.query.type === 'end' ? 'end_address' : 'start_address';
     const detailCol = type === 'end_address' ? 'end_detail' : 'start_detail';
+    const latCol = type === 'end_address' ? 'end_lat' : 'start_lat';
+    const lngCol = type === 'end_address' ? 'end_lng' : 'start_lng';
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const days = Math.min(parseInt(req.query.days) || 90, 365);
+    const customerId = req.query.customer_id ? parseInt(req.query.customer_id) : null;
 
-    // 빈 주소, 검증용 데이터 제외
-    const [rows] = await pool.execute(
-      `SELECT ${type} AS address,
-              MAX(${detailCol}) AS detail,
-              COUNT(*) AS use_count,
-              MAX(created_at) AS last_used_at
-       FROM calls
-       WHERE company_id = ?
+    // 동적 WHERE 절 구성
+    let where = `WHERE company_id = ?
          AND ${type} IS NOT NULL
          AND ${type} != ''
          AND ${type} NOT LIKE '%자동검증%'
          AND ${type} NOT LIKE '%검증%'
-         AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+         AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`;
+    const params = [req.user.company_id, days];
+
+    if (customerId) {
+      where += ` AND customer_id = ?`;
+      params.push(customerId);
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT ${type} AS address,
+              MAX(${detailCol}) AS detail,
+              MAX(${latCol}) AS lat,
+              MAX(${lngCol}) AS lng,
+              COUNT(*) AS use_count,
+              MAX(created_at) AS last_used_at
+       FROM calls
+       ${where}
        GROUP BY ${type}
        ORDER BY use_count DESC, last_used_at DESC
        LIMIT ?`,
-      [req.user.company_id, days, limit]
+      [...params, limit]
     );
 
-    res.json({ data: rows, type: req.query.type === 'end' ? 'end' : 'start' });
+    res.json({
+      data: rows,
+      type: req.query.type === 'end' ? 'end' : 'start',
+      customer_id: customerId,
+    });
   } catch (err) {
     console.error('GET /calls/frequent-addresses error:', err);
     res.status(500).json({ error: '자주 가는 곳 조회 실패' });
@@ -115,7 +134,12 @@ router.post('/', authenticate, authorize('SUPER_ADMIN'), checkLicense, async (re
   if (req.licenseExpired) return res.status(403).json({ error: '서비스 이용기간이 만료되어 콜 생성이 불가합니다.' });
 
   try {
-    const { customer_id, partner_id, start_address, start_detail, end_address, end_detail, estimated_fare, payment_method, payment_type_id, memo, assigned_rider_id } = req.body;
+    const {
+      customer_id, partner_id,
+      start_address, start_detail, start_lat, start_lng,
+      end_address, end_detail, end_lat, end_lng,
+      estimated_fare, payment_method, payment_type_id, memo, assigned_rider_id
+    } = req.body;
 
     if (!start_address) return res.status(400).json({ error: '출발지를 입력해주세요.' });
 
@@ -144,10 +168,14 @@ router.post('/', authenticate, authorize('SUPER_ADMIN'), checkLicense, async (re
     }
 
     const [result] = await pool.execute(
-      `INSERT INTO calls (company_id, created_by, customer_id, partner_id, start_address, start_detail, end_address, end_detail, estimated_fare, payment_type_id, memo, status, assigned_rider_id, assigned_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO calls (company_id, created_by, customer_id, partner_id,
+         start_address, start_detail, start_lat, start_lng,
+         end_address, end_detail, end_lat, end_lng,
+         estimated_fare, payment_type_id, memo, status, assigned_rider_id, assigned_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.user.company_id, req.user.user_id, customer_id || null, partner_id || null,
-       start_address, start_detail || null, end_address || null, end_detail || null,
+       start_address, start_detail || null, start_lat || null, start_lng || null,
+       end_address || null, end_detail || null, end_lat || null, end_lng || null,
        estimated_fare || null, resolvedPaymentTypeId, memo || null,
        initialStatus, assignedRiderId, assignedAt]
     );
@@ -215,7 +243,7 @@ router.put('/:id/accept', authenticate, authorize('RIDER', 'SUPER_ADMIN'), async
     await conn.commit();
     writeAuditLog({ company_id: req.user.company_id, user_id: req.user.user_id, action: 'CALL_ACCEPT', target_table: 'calls', target_id: parseInt(req.params.id), ip_address: req.ip });
 
-    // 수락한 콜 정보 반환 (운행 작성에 사용)
+    // 수락한 콜 정보 반환 (운행 작성에 사용) — lat/lng 포함되어 자동 입력 가능
     const [updated] = await pool.execute(
       `SELECT c.*, cust.name AS customer_name, cust.phone AS customer_phone, cust.customer_code,
               partner.name AS partner_name
@@ -356,7 +384,13 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res) => {
       );
     }
 
-    const allowed = ['customer_id', 'partner_id', 'start_address', 'start_detail', 'end_address', 'end_detail', 'estimated_fare', 'payment_type_id', 'memo'];
+    // lat/lng도 수정 허용 (주소를 다시 검색했을 때 좌표 갱신)
+    const allowed = [
+      'customer_id', 'partner_id',
+      'start_address', 'start_detail', 'start_lat', 'start_lng',
+      'end_address', 'end_detail', 'end_lat', 'end_lng',
+      'estimated_fare', 'payment_type_id', 'memo'
+    ];
     const updates = [], values = [];
     for (const key of allowed) { if (req.body[key] !== undefined) { updates.push(`${key} = ?`); values.push(req.body[key]); } }
     if (updates.length === 0) return res.status(400).json({ error: '수정할 항목이 없습니다.' });

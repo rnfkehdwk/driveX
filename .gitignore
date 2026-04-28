@@ -1,9 +1,14 @@
 .claude/
 
-# Vite 프론트에드 환경변수 (카카오 키 등)
-# 프론트에드(mobile, admin/client)의 .env는 빌드 시 인라인되어 코드에 포함됨
-# 실제 키는 각 개발자 마신에서 관리
-# 주의: 루트의 env 파일 (점 없는)과 drivelog-admin/.env (백엔드)는 이 규칙 적용 안 됨
+# Vite 프론트엔드 환경변수 (카카오 키 등)
+# 프론트엔드(mobile, admin/client)의 .env는 빌드 시 인라인되어 코드에 포함됨
+# 실제 키는 각 개발자 머신에서 관리
+# 2026-04-29: 루트 .env로 통합 (envDir 설정으로 두 프로젝트가 공유)
+.env
+.env.local
+.env.*.local
+
+# 하위 .env는 더 이상 사용 안 하지만 혹시 만들어지면 무시 (envDir 설정으로 루트 .env 사용)
 drivelog-mobile/.env
 drivelog-mobile/.env.local
 drivelog-mobile/.env.*.local

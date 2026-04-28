@@ -1,0 +1,5 @@
+# DriveLog Admin — 환경변수
+# 카카오맵 API 키 (양양대리 - infoData.md 참고)
+
+VITE_KAKAO_REST_KEY=5bfc2766bfe2836aab70ff613c8c05be
+VITE_KAKAO_JS_KEY=b1e43fe40464bf365f6122749187c09a

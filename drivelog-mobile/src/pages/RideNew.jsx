@@ -6,7 +6,7 @@ import KakaoMiniMap from '../components/KakaoMiniMap';
 import MileageUseSelect from '../components/MileageUseSelect';
 import useTenantConfig from '../hooks/useTenantConfig';
 
-const KAKAO_REST_KEY = import.meta.env.VITE_KAKAO_REST_KEY;
+const KAKAO_REST_KEY = typeof __KAKAO_REST_KEY__ !== 'undefined' ? __KAKAO_REST_KEY__ : '';
 const DRAFT_KEY = 'rideDraft';
 
 function formatFare(val) {
@@ -115,7 +115,36 @@ export default function RideNew({ user }) {
 
   const [form, setForm] = useState(() => {
     if (fromCall) {
-      return { ...defaultForm, start_address: fromCall.start_address || '', start_detail: fromCall.start_detail || '', end_address: fromCall.end_address || '', end_detail: fromCall.end_detail || '', customer_id: fromCall.customer_id || null, customer_name: fromCall.customer_name || '', customer_phone: fromCall.customer_phone || '', partner_id: fromCall.partner_id || null, partner_name: fromCall.partner_name || '', user_type: fromCall.partner_id ? 'partner' : fromCall.customer_id ? 'customer' : '', total_fare: fromCall.estimated_fare ? String(fromCall.estimated_fare) : '', payment_method: fromCall.payment_method || 'CASH', rider_memo: fromCall.memo ? `[콜 #${fromCall.call_id}] ${fromCall.memo}` : `[콜 #${fromCall.call_id}]`, mileage_used: 0, _call_id: fromCall.call_id };
+      // 콜에 좌표가 있으면 started_at/ended_at도 자동 채움 — "운행일지 작성에서 출발/도착 클릭 강제" 버그 픽스 (2026-04-28)
+      const now = getLocalNow();
+      const hasStartCoord = !!(fromCall.start_lat && fromCall.start_lng);
+      const hasEndCoord = !!(fromCall.end_lat && fromCall.end_lng);
+      return {
+        ...defaultForm,
+        start_address: fromCall.start_address || '',
+        start_detail: fromCall.start_detail || '',
+        start_lat: fromCall.start_lat ? parseFloat(fromCall.start_lat) : null,
+        start_lng: fromCall.start_lng ? parseFloat(fromCall.start_lng) : null,
+        end_address: fromCall.end_address || '',
+        end_detail: fromCall.end_detail || '',
+        end_lat: fromCall.end_lat ? parseFloat(fromCall.end_lat) : null,
+        end_lng: fromCall.end_lng ? parseFloat(fromCall.end_lng) : null,
+        // 콜에서 진입 시 좌표 유무 상관없이 started_at 자동 채움 (옵션 A, 2026-04-29)
+        // → 출발/도착 버튼 안 눌러도 저장 가능. 운임/고객 정보가 콜에서 이미 넘어왔으니 시각만 자동 보충.
+        started_at: now,
+        ended_at: hasEndCoord ? now : '',
+        customer_id: fromCall.customer_id || null,
+        customer_name: fromCall.customer_name || '',
+        customer_phone: fromCall.customer_phone || '',
+        partner_id: fromCall.partner_id || null,
+        partner_name: fromCall.partner_name || '',
+        user_type: fromCall.partner_id ? 'partner' : fromCall.customer_id ? 'customer' : '',
+        total_fare: fromCall.estimated_fare ? String(fromCall.estimated_fare) : '',
+        payment_method: fromCall.payment_method || 'CASH',
+        rider_memo: fromCall.memo ? `[콜 #${fromCall.call_id}] ${fromCall.memo}` : `[콜 #${fromCall.call_id}]`,
+        mileage_used: 0,
+        _call_id: fromCall.call_id
+      };
     }
     const draft = loadDraft();
     if (draft && draft.started_at) { const { _savedAt, ...rest } = draft; return { ...defaultForm, ...rest }; }

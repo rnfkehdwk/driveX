@@ -34,6 +34,8 @@ export const createRide = (b) => api.post('/rides', b).then(r => r.data);
 export const fetchRiders = () => api.get('/users/riders').then(r => r.data);
 export const fetchUsers = (p) => api.get('/users', { params: p }).then(r => r.data);
 export const createUser = (b) => api.post('/users', b).then(r => r.data);
+export const updateUser = (id, b) => api.put(`/users/${id}`, b).then(r => r.data);
+export const issueTempPassword = (id) => api.post(`/users/${id}/issue-temp-password`).then(r => r.data);
 
 export const fetchCustomers = (p) => api.get('/customers', { params: p }).then(r => r.data);
 export const createCustomer = (b) => api.post('/customers', b).then(r => r.data);

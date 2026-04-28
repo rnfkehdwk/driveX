@@ -1,43 +1,67 @@
 import { useState, useEffect, useRef } from 'react';
 
-const KAKAO_REST_KEY = import.meta.env.VITE_KAKAO_REST_KEY;
+const KAKAO_REST_KEY = typeof __KAKAO_REST_KEY__ !== 'undefined' ? __KAKAO_REST_KEY__ : '';
 
+// 카카오 API 응답을 받아 에러를 던지거나 결과 반환
+// - HTTP 에러: 401(키 잘못), 429(쿼터 초과) 등
+// - errorType: API 자체 에러 코드 (DocumentNotFound 등)
+async function kakaoFetch(url) {
+  if (!KAKAO_REST_KEY) {
+    const err = new Error('카카오 API 키가 설정되지 않았습니다 (VITE_KAKAO_REST_KEY)');
+    err.code = 'NO_API_KEY';
+    throw err;
+  }
+  const res = await fetch(url, {
+    headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
+  });
+  if (!res.ok) {
+    let msg = `카카오 API 오류 (HTTP ${res.status})`;
+    if (res.status === 401) msg = 'API 키가 잘못되었거나 권한 없음 (401)';
+    else if (res.status === 403) msg = 'API 키 권한 거부 — 도메인 등록 확인 (403)';
+    else if (res.status === 429) msg = 'API 호출 한도 초과 — 잠시 후 다시 시도 (429)';
+    try {
+      const body = await res.json();
+      if (body?.message) msg += ` — ${body.message}`;
+    } catch {}
+    const err = new Error(msg);
+    err.code = `HTTP_${res.status}`;
+    throw err;
+  }
+  const data = await res.json();
+  // 카카오 응답 자체가 에러를 담을 수도 있음
+  if (data.errorType) {
+    const err = new Error(`카카오: ${data.errorType} — ${data.message || ''}`);
+    err.code = data.errorType;
+    throw err;
+  }
+  return data;
+}
+
+// 거리순 검색 (radius 제한 없음 — 전국 어디든 가까운 순)
 async function searchKeyword(query, lng, lat) {
   const params = new URLSearchParams({ query, size: 15 });
   if (lng && lat) {
     params.set('x', lng);
     params.set('y', lat);
     params.set('sort', 'distance');
-    params.set('radius', '20000'); // 20km 반경 우선, 없으면 거리순으로 전체 확장
+    // radius 제거: 전국 검색하되 거리순으로 정렬
   }
-  const res = await fetch(`https://dapi.kakao.com/v2/local/search/keyword.json?${params}`, {
-    headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
-  });
-  return res.json();
+  return kakaoFetch(`https://dapi.kakao.com/v2/local/search/keyword.json?${params}`);
 }
 
+// 좌표 없이 일반 검색
 async function searchKeywordFallback(query) {
-  // 좌표 없이 일반 검색 (GPS 거부 등의 경우)
   const params = new URLSearchParams({ query, size: 15 });
-  const res = await fetch(`https://dapi.kakao.com/v2/local/search/keyword.json?${params}`, {
-    headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
-  });
-  return res.json();
+  return kakaoFetch(`https://dapi.kakao.com/v2/local/search/keyword.json?${params}`);
 }
 
 async function searchAddress(query) {
   const params = new URLSearchParams({ query, size: 15 });
-  const res = await fetch(`https://dapi.kakao.com/v2/local/search/address.json?${params}`, {
-    headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
-  });
-  return res.json();
+  return kakaoFetch(`https://dapi.kakao.com/v2/local/search/address.json?${params}`);
 }
 
 async function coord2Address(lng, lat) {
-  const res = await fetch(`https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lng}&y=${lat}`, {
-    headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` }
-  });
-  return res.json();
+  return kakaoFetch(`https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lng}&y=${lat}`);
 }
 
 // 거리 포맷: 1234m → "1.2km", 423m → "423m"
@@ -101,6 +125,7 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
   const [loading, setLoading] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [tab, setTab] = useState('keyword'); // keyword | address
+  const [errorMsg, setErrorMsg] = useState(''); // 에러 메시지 (사용자 표시용)
 
   // 검색 기준 좌표 우선순위: GPS 자동 → props → sessionStorage 캐시 → 회사 좌표 (localStorage)
   const cached = loadLastCoord();
@@ -136,17 +161,17 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
   }, []);
 
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
+    if (!query.trim()) { setResults([]); setErrorMsg(''); return; }
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
       setLoading(true);
+      setErrorMsg('');
       try {
         if (tab === 'keyword') {
           // 거리순 검색 시도 → 결과가 비어있으면 좌표 없이 fallback
           let data = null;
           if (searchLat && searchLng) {
             data = await searchKeyword(query, searchLng, searchLat);
-            // radius 안에 결과가 없으면 좌표 빼고 다시 검색
             if (!data.documents || data.documents.length === 0) {
               data = await searchKeywordFallback(query);
             }
@@ -177,7 +202,11 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
             lng: parseFloat(d.x),
           })));
         }
-      } catch { setResults([]); }
+      } catch (err) {
+        console.error('[AddressSearch] 검색 실패:', err);
+        setErrorMsg(err.message || '검색에 실패했습니다');
+        setResults([]);
+      }
       finally { setLoading(false); }
     }, 400);
     return () => clearTimeout(timerRef.current);
@@ -194,7 +223,9 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
           const doc = data.documents?.[0];
           const addr = doc?.road_address?.address_name || doc?.address?.address_name || '';
           onSelect({ name: addr, address: addr, lat: latitude, lng: longitude });
-        } catch { alert('주소 변환 실패'); }
+        } catch (err) {
+          alert('주소 변환 실패: ' + (err.message || '알 수 없는 오류'));
+        }
         finally { setGpsLoading(false); }
       },
       () => { alert('위치를 가져올 수 없습니다.'); setGpsLoading(false); },
@@ -224,11 +255,11 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
 
           {/* 탭 */}
           <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderRadius: 10, overflow: 'hidden', border: '1.5px solid #e2e8f0' }}>
-            <button onClick={() => { setTab('keyword'); setResults([]); }} style={{
+            <button onClick={() => { setTab('keyword'); setResults([]); setErrorMsg(''); }} style={{
               flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer',
               background: tab === 'keyword' ? '#2563eb' : 'white', color: tab === 'keyword' ? 'white' : '#64748b'
             }}>🔍 장소 검색</button>
-            <button onClick={() => { setTab('address'); setResults([]); }} style={{
+            <button onClick={() => { setTab('address'); setResults([]); setErrorMsg(''); }} style={{
               flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer',
               background: tab === 'address' ? '#2563eb' : 'white', color: tab === 'address' ? 'white' : '#64748b'
             }}>🏠 주소 검색</button>
@@ -241,7 +272,7 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
               style={{ width: '100%', padding: '14px 40px 14px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
             />
             {query && (
-              <button onClick={() => { setQuery(''); setResults([]); }} style={{
+              <button onClick={() => { setQuery(''); setResults([]); setErrorMsg(''); }} style={{
                 position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
                 border: 'none', background: 'none', fontSize: 18, color: '#94a3b8', cursor: 'pointer'
               }}>✕</button>
@@ -262,7 +293,18 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px', minHeight: 200, maxHeight: '50vh' }}>
           {loading && <div style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>검색 중...</div>}
 
-          {!loading && results.length === 0 && query && (
+          {/* 에러 메시지 — API 키 누락이나 권한 문제 디버깅 */}
+          {!loading && errorMsg && (
+            <div style={{ padding: 16, margin: '4px 0', borderRadius: 12, background: '#fef2f2', border: '1.5px solid #fecaca' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#991b1b', marginBottom: 6 }}>⚠️ 검색 오류</div>
+              <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5, wordBreak: 'break-all' }}>{errorMsg}</div>
+              <div style={{ fontSize: 11, color: '#991b1b', marginTop: 8, opacity: 0.7 }}>
+                관리자에게 문의하거나, 다른 검색어로 다시 시도해주세요.
+              </div>
+            </div>
+          )}
+
+          {!loading && !errorMsg && results.length === 0 && query && (
             <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8' }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
               <div style={{ fontSize: 14 }}>검색 결과가 없습니다</div>
@@ -272,7 +314,7 @@ export default function AddressSearchModal({ onSelect, onClose, title = '주소 
             </div>
           )}
 
-          {!loading && results.length === 0 && !query && (
+          {!loading && !errorMsg && results.length === 0 && !query && (
             <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8' }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>📍</div>
               <div style={{ fontSize: 14 }}>검색어를 입력하세요</div>

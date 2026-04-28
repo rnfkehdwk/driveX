@@ -9,6 +9,7 @@ const ALL_MENUS = [
   { path: '/ride/new', label: '운행기록 작성', icon: '🚗', desc: 'GPS 출발/도착 + 요금 입력', color: '#2563eb', bg: '#eff6ff', roles: ['MASTER', 'SUPER_ADMIN', 'RIDER'] },
   { path: '/ride/list', label: '운행기록 조회', icon: '📋', desc: '운행 기록 조회', color: '#16a34a', bg: '#f0fdf4', roles: ['MASTER', 'SUPER_ADMIN', 'RIDER'] },
   { path: '/rider/new', label: '기사 등록', icon: '🧑‍✈️', desc: '신규 기사 등록', color: '#0891b2', bg: '#ecfeff', roles: ['MASTER', 'SUPER_ADMIN'] },
+  { path: '/rider/list', label: '기사 조회', icon: '👥', desc: '기사 목록 조회 및 정보 수정', color: '#0e7490', bg: '#cffafe', roles: ['MASTER', 'SUPER_ADMIN'] },
   { path: '/customer/new', label: '고객 등록', icon: '👤', desc: '신규 고객 등록', color: '#d97706', bg: '#fffbeb', roles: ['MASTER', 'SUPER_ADMIN', 'RIDER'] },
   { path: '/customer/list', label: '고객 조회', icon: '🔍', desc: '기존 고객 검색', color: '#7c3aed', bg: '#f5f3ff', roles: ['MASTER', 'SUPER_ADMIN', 'RIDER'] },
   { path: '/partner/list', label: '제휴업체 관리', icon: '🤝', desc: '제휴업체 등록/조회', color: '#be185d', bg: '#fdf2f8', roles: ['MASTER', 'SUPER_ADMIN'] },

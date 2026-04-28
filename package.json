@@ -6,5 +6,8 @@
     "deploy:mobile": "cd drivelog-mobile && npm run deploy",
     "deploy:server": "scp -O -P 30000 -r drivelog-admin/server/config drivelog-admin/server/db drivelog-admin/server/middleware drivelog-admin/server/routes drivelog-admin/server/utils drivelog-admin/server/data drivelog-admin/server/index.js drivelog-admin/server/package.json drivelog-admin/server/package-lock.json drivelog-admin/server/Dockerfile rnfkehdwk@rnfkehdwk.synology.me:/volume1/docker/drivelog/server/ && ssh -p 30000 rnfkehdwk@rnfkehdwk.synology.me \"cd /volume1/docker/drivelog && sudo /usr/local/bin/docker-compose restart api nginx\"",
     "deploy:all": "npm run deploy:admin && npm run deploy:mobile && npm run deploy:server"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
   }
 }
