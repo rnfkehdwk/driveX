@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchCalls, createCall, cancelCall, updateCall, fetchCustomers, fetchPartners, fetchPaymentTypes, fetchFrequentAddresses, fetchRiders, createCustomer } from '../api/client';
 import AddressSearchModal from '../components/AddressSearchModal';
 import KakaoMiniMap from '../components/KakaoMiniMap';
@@ -29,6 +29,8 @@ function CreateCallModal({ onClose, onCreated }) {
   // 신규 고객 등록 (검색 결과 없을 때 바로 등록)
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustSaving, setNewCustSaving] = useState(false);
+  // 신규고객 박스 ref — onBlur에서 relatedTarget 검사용 (2026-04-29 v2 픽스)
+  const newCustBoxRef = useRef(null);
   const [addrSearch, setAddrSearch] = useState(null); // 'start' | 'end' | null
   // 자주 가는 곳 (즐겨찾기 대체)
   const [frequentStart, setFrequentStart] = useState([]);
@@ -164,7 +166,13 @@ function CreateCallModal({ onClose, onCreated }) {
                   value={custSearch}
                   onChange={e => { setCustSearch(e.target.value); setShowCustList(true); }}
                   onFocus={() => setShowCustList(true)}
-                  onBlur={() => setTimeout(() => setShowCustList(false), 200)}
+                  onBlur={(e) => {
+                    // 신규고객 박스 내부로 focus 이동 시에는 닫지 않음 (2026-04-29 v2 픽스)
+                    if (newCustBoxRef.current && newCustBoxRef.current.contains(e.relatedTarget)) {
+                      return;
+                    }
+                    setTimeout(() => setShowCustList(false), 200);
+                  }}
                   placeholder="고객명, 코드, 전화번호 검색..."
                   style={is}
                 />
@@ -184,6 +192,7 @@ function CreateCallModal({ onClose, onCreated }) {
                 )}
                 {showCustList && custSearch && filteredCust.length === 0 && (
                   <div
+                    ref={newCustBoxRef} /* onBlur relatedTarget 검사용 (2026-04-29 v2 픽스) */
                     style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, zIndex: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
                   >
                     <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', marginBottom: 10 }}>검색 결과 없음</div>

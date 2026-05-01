@@ -1,8 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchCalls, acceptCall, cancelCall, createCall, fetchCustomers, fetchPartners, fetchPaymentTypes, fetchFrequentAddresses, fetchRiders, createCustomer } from '../api/client';
 import AddressSearchModal from '../components/AddressSearchModal';
 import KakaoMiniMap from '../components/KakaoMiniMap';
+
+// ID type-safe 비교 — number string 섞여 있어도 안전하게 비교 (2026-05-01 추가)
+//   원인: SA 본인 지명 콜 생성 시 콜 #36~#39 ASSIGNED 상태로 멈춤
+//   버그 재현: assigned_rider_id와 user.user_id가 number/string 타입 불일치로
+//   === 비교가 false 되어 "운행기록 작성" 버튼 미시 → 매출 집계 누락
+const sameId = (a, b) => a != null && b != null && Number(a) === Number(b);
 
 const STATUS_MAP = {
   WAITING: { label: '대기 중', color: '#d97706', bg: '#fffbeb' },
@@ -38,6 +44,8 @@ function CreateCallModal({ onClose, onCreated }) {
   // 신규 고객 등록 (검색 결과 없을 때 바로 등록) — 2026-04-25 추가
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustSaving, setNewCustSaving] = useState(false);
+  // 신규고객 박스 ref — onBlur에서 relatedTarget 검사용 (2026-04-29 v2 픽스)
+  const newCustBoxRef = useRef(null);
 
   // 결제구분 + 고객/제휴업체 전체 목록을 모달 열 때 한 번만 로드 (focus만 해도 드롭다운 펼침 가능)
   useEffect(() => {
@@ -210,7 +218,13 @@ function CreateCallModal({ onClose, onCreated }) {
                   value={custSearch}
                   onChange={e => { setCustSearch(e.target.value); setShowCustList(true); }}
                   onFocus={() => setShowCustList(true)}
-                  onBlur={() => setTimeout(() => setShowCustList(false), 200)}
+                  onBlur={(e) => {
+                    // 신규고객 박스 내부로 focus 이동 시에는 닫지 않음 (2026-04-29 v2 픽스)
+                    if (newCustBoxRef.current && newCustBoxRef.current.contains(e.relatedTarget)) {
+                      return;
+                    }
+                    setTimeout(() => setShowCustList(false), 200);
+                  }}
                   placeholder="고객명, 코드, 전화번호 검색..."
                   style={is}
                 />
@@ -227,6 +241,7 @@ function CreateCallModal({ onClose, onCreated }) {
                 )}
                 {showCustList && custSearch && filteredCust.length === 0 && (
                   <div
+                    ref={newCustBoxRef} /* onBlur relatedTarget 검사용 (2026-04-29 v2 픽스) */
                     style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, zIndex: 5, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
                   >
                     <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', marginBottom: 10 }}>검색 결과 없음</div>
@@ -493,7 +508,7 @@ export default function CallList({ user }) {
   const handleGoRide = (call) => { nav('/ride/new', { state: { fromCall: call } }); };
 
   const waitingCalls = calls.filter(c => c.status === 'WAITING');
-  const myCalls = calls.filter(c => c.assigned_rider_id === user?.user_id && ['ASSIGNED', 'IN_PROGRESS'].includes(c.status));
+  const myCalls = calls.filter(c => sameId(c.assigned_rider_id, user?.user_id) && ['ASSIGNED', 'IN_PROGRESS'].includes(c.status));
   const allActiveCalls = isSuperAdmin ? calls.filter(c => ['ASSIGNED', 'IN_PROGRESS'].includes(c.status)) : [];
 
   const ago = (dt) => { if (!dt) return ''; const m = Math.floor((Date.now() - new Date(dt).getTime()) / 60000); if (m < 1) return '방금'; if (m < 60) return `${m}분 전`; return `${Math.floor(m / 60)}시간 전`; };
@@ -534,7 +549,7 @@ export default function CallList({ user }) {
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#2563eb', marginBottom: 8 }}>{isSuperAdmin ? '🚗 진행 중 콜' : '🧑‍✈️ 내 진행 콜'}</div>
                 {(isSuperAdmin ? allActiveCalls : myCalls).map(call => {
                   const st = STATUS_MAP[call.status];
-                  const isMyCall = call.assigned_rider_id === user?.user_id;
+                  const isMyCall = sameId(call.assigned_rider_id, user?.user_id);
                   return (
                     <div key={call.call_id} style={{ background: 'white', borderRadius: 16, padding: '16px 18px', marginBottom: 10, border: '2px solid #bfdbfe' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
