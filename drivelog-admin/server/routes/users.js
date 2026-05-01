@@ -225,6 +225,11 @@ router.post('/', authenticate, authorize('MASTER', 'SUPER_ADMIN'), checkLicense,
 });
 
 // PUT — 수정
+// login_id 변경 정책 (2026-04-29 추가):
+//   - MASTER: 모든 유저(MASTER 본인 포함, 다른 MASTER, SA, RIDER) login_id 변경 가능
+//   - SUPER_ADMIN: 자기 회사 소속 RIDER만 login_id 변경 가능 (자기 자신, 다른 SA, MASTER는 불가)
+//   - 변경 시: UNIQUE 충돌 검사, 형식 검증, audit log 'USER_LOGIN_ID_CHANGE' 별도 기록
+//   - rider_id, pickup_rider_id 등은 user_id(PK) 기반이므로 login_id 변경 시 운행/콜/마일리지 외래키 영향 없음
 router.put('/:id', authenticate, authorize('MASTER', 'SUPER_ADMIN'), checkLicense, async (req, res) => {
   if (req.licenseExpired) return res.status(403).json({ error: '서비스 이용기간이 만료되어 계정 수정이 불가합니다.' });
   try {
@@ -246,8 +251,59 @@ router.put('/:id', authenticate, authorize('MASTER', 'SUPER_ADMIN'), checkLicens
       if (cnt[0].c >= 3) return res.status(400).json({ error: 'MASTER 계정은 최대 3개까지만 가능합니다.' });
     }
 
+    // ─── login_id 변경 사전 검증 ───
+    let oldLoginId = null;
+    if (req.body.login_id !== undefined && req.body.login_id !== null) {
+      const newLoginId = String(req.body.login_id).trim();
+
+      // 형식: 4~50자, 영문/숫자/_/-/. 만 허용 (한글/공백/특수문자 차단)
+      if (newLoginId.length < 4 || newLoginId.length > 50) {
+        return res.status(400).json({ error: '로그인 ID는 4~50자여야 합니다.' });
+      }
+      if (!/^[a-zA-Z0-9_.-]+$/.test(newLoginId)) {
+        return res.status(400).json({ error: '로그인 ID는 영문/숫자/_/-/. 만 사용 가능합니다.' });
+      }
+
+      // 대상 사용자 조회 (현재 login_id, role, company_id)
+      const [targets] = await pool.execute('SELECT user_id, login_id, role, company_id FROM users WHERE user_id = ?', [req.params.id]);
+      if (targets.length === 0) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
+      const target = targets[0];
+      oldLoginId = target.login_id;
+
+      // 권한 검증
+      if (req.user.role === 'SUPER_ADMIN') {
+        // SA는 자기 회사 RIDER만 변경 가능
+        if (target.company_id !== req.user.company_id) {
+          return res.status(403).json({ error: '다른 회사 계정의 로그인 ID는 변경할 수 없습니다.' });
+        }
+        if (target.role !== 'RIDER') {
+          return res.status(403).json({ error: '관리자는 일반 기사의 로그인 ID만 변경할 수 있습니다.' });
+        }
+      }
+      // MASTER는 모든 유저 변경 가능 (본인 포함) — 추가 검증 없음
+
+      // 동일값이면 무시 (UPDATE에서 빠짐)
+      if (newLoginId === target.login_id) {
+        delete req.body.login_id;
+        oldLoginId = null;
+      } else {
+        // UNIQUE 충돌 검사 (대상 본인 제외)
+        const [dup] = await pool.execute('SELECT user_id FROM users WHERE login_id = ? AND user_id != ?', [newLoginId, req.params.id]);
+        if (dup.length > 0) {
+          return res.status(409).json({ error: '이미 사용 중인 로그인 ID입니다.' });
+        }
+        // 정규화된 값으로 덮어쓰기 (앞뒤 공백 trim 반영)
+        req.body.login_id = newLoginId;
+      }
+    }
+
     const baseAllowed = ['name', 'phone', 'email', 'vehicle_number', 'vehicle_type', 'status', 'role'];
-    const allowed = req.user.role === 'MASTER' ? [...baseAllowed, 'company_id'] : baseAllowed;
+    // SA는 자기 회사 RIDER만 login_id 변경 가능 (위에서 권한 체크 완료) — 화이트리스트에 추가
+    // MASTER는 무조건 추가
+    const loginIdAllowed = req.user.role === 'MASTER' || req.user.role === 'SUPER_ADMIN';
+    const allowed = req.user.role === 'MASTER'
+      ? [...baseAllowed, 'company_id', 'login_id']
+      : (loginIdAllowed ? [...baseAllowed, 'login_id'] : baseAllowed);
     if (req.user.role === 'SUPER_ADMIN' && req.body.role && !['RIDER', 'SUPER_ADMIN'].includes(req.body.role)) return res.status(403).json({ error: '허용되지 않는 권한입니다.' });
 
     const updates = [], values = [];
@@ -258,8 +314,25 @@ router.put('/:id', authenticate, authorize('MASTER', 'SUPER_ADMIN'), checkLicens
     if (req.user.role === 'SUPER_ADMIN') { values.push(req.user.company_id); await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE user_id = ? AND company_id = ?`, values); }
     else await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE user_id = ?`, values);
 
+    // login_id가 실제로 변경된 경우 별도 audit log
+    if (oldLoginId && req.body.login_id) {
+      writeAuditLog({
+        company_id: req.user.company_id,
+        user_id: req.user.user_id,
+        action: 'USER_LOGIN_ID_CHANGE',
+        target_table: 'users',
+        target_id: parseInt(req.params.id),
+        detail: { old_login_id: oldLoginId, new_login_id: req.body.login_id },
+        ip_address: req.ip
+      });
+    }
     writeAuditLog({ company_id: req.user.company_id, user_id: req.user.user_id, action: 'USER_UPDATE', target_table: 'users', target_id: parseInt(req.params.id), ip_address: req.ip });
-    res.json({ message: '사용자 정보가 수정되었습니다.' });
+    res.json({
+      message: '사용자 정보가 수정되었습니다.',
+      login_id_changed: !!(oldLoginId && req.body.login_id),
+      old_login_id: oldLoginId || undefined,
+      new_login_id: oldLoginId && req.body.login_id ? req.body.login_id : undefined,
+    });
   } catch (err) { console.error('PUT /users/:id error:', err); res.status(500).json({ error: '사용자 수정에 실패했습니다.' }); }
 });
 

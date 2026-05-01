@@ -24,6 +24,9 @@ export default function Users() {
   const [riderLimit, setRiderLimit] = useState({ current: 0, max: 0, free_riders: 0, plan_name: '-' });
   const [tempPwResult, setTempPwResult] = useState(null);
   const [issuingFor, setIssuingFor] = useState(null);
+  const [loginIdEdit, setLoginIdEdit] = useState(null); // { user_id, login_id, name, role } | null
+  const [newLoginId, setNewLoginId] = useState('');
+  const [savingLoginId, setSavingLoginId] = useState(false);
   const { toggle, icon, sort } = useSortable();
 
   const currentUser = (() => { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } })();
@@ -87,6 +90,38 @@ export default function Users() {
   const statusStyle = (s) => ({ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: s === 'ACTIVE' ? '#f0fdf4' : s === 'SUSPENDED' ? '#fef2f2' : '#f8fafc', color: s === 'ACTIVE' ? '#16a34a' : s === 'SUSPENDED' ? '#dc2626' : '#94a3b8' });
   const canEdit = (u) => isMaster ? u.user_id !== currentUser.user_id : u.role !== 'MASTER';
   const canToggle = (u) => isMaster ? u.user_id !== currentUser.user_id : u.role !== 'MASTER';
+  // 로그인 ID 변경 권한 (2026-04-29 추가):
+  //   MASTER: 모든 유저(자기 자신 포함) ID 변경 가능
+  //   SUPER_ADMIN: 자기 회사 소속 RIDER만 ID 변경 가능
+  const canChangeLoginId = (u) => {
+    if (isMaster) return true;
+    if (currentUser?.role === 'SUPER_ADMIN') {
+      return u.role === 'RIDER' && u.company_id === currentUser.company_id;
+    }
+    return false;
+  };
+
+  const openLoginIdEdit = (u) => { setLoginIdEdit(u); setNewLoginId(u.login_id); };
+  const handleSaveLoginId = async () => {
+    const trimmed = (newLoginId || '').trim();
+    if (!trimmed) { alert('새 로그인 ID를 입력하세요.'); return; }
+    if (trimmed === loginIdEdit.login_id) { alert('현재 ID와 동일합니다. 다른 ID를 입력하세요.'); return; }
+    if (trimmed.length < 4 || trimmed.length > 50) { alert('로그인 ID는 4~50자여야 합니다.'); return; }
+    if (!/^[a-zA-Z0-9_.-]+$/.test(trimmed)) { alert('로그인 ID는 영문/숫자/_/-/. 만 사용 가능합니다.'); return; }
+    const isSelf = loginIdEdit.user_id === currentUser?.user_id;
+    const confirmMsg = isSelf
+      ? `⚠️ 본인 계정의 로그인 ID를 변경합니다.\n\n"${loginIdEdit.login_id}" → "${trimmed}"\n\n• 현재 세션은 유지되지만, 다음 로그인부터 새 ID를 사용해야 합니다\n• 계속 진행하시겠습니까?`
+      : `${loginIdEdit.name}님의 로그인 ID를 변경합니다.\n\n"${loginIdEdit.login_id}" → "${trimmed}"\n\n• 해당 사용자는 다음 로그인부터 새 ID를 사용해야 합니다\n• 계속 진행하시겠습니까?`;
+    if (!confirm(confirmMsg)) return;
+    setSavingLoginId(true);
+    try {
+      await updateUser(loginIdEdit.user_id, { login_id: trimmed });
+      alert(`로그인 ID가 "${trimmed}"(으)로 변경되었습니다.`);
+      setLoginIdEdit(null); setNewLoginId(''); load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'ID 변경 실패');
+    } finally { setSavingLoginId(false); }
+  };
 
   const headers = isMaster
     ? [{ key: 'company_name', label: '업체명' }, { key: 'name', label: '이름' }, { key: 'login_id', label: '로그인ID' }, { key: 'role', label: '역할' }, { key: null, label: '연락처' }, { key: null, label: '차량번호' }, { key: 'status', label: '상태' }, { key: null, label: '최근로그인' }, { key: null, label: '관리' }]
@@ -166,6 +201,7 @@ export default function Users() {
                 <td style={{ padding: '11px 12px' }}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {canEdit(u) && <button onClick={() => openEdit(u)} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #e2e8f0', background: 'white', fontSize: 11, cursor: 'pointer', color: '#2563eb' }}>수정</button>}
+                    {canChangeLoginId(u) && <button onClick={() => openLoginIdEdit(u)} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #c7d2fe', background: '#eef2ff', fontSize: 11, cursor: 'pointer', color: '#4338ca', fontWeight: 600 }}>🆔 ID변경</button>}
                     {canEdit(u) && u.status === 'ACTIVE' && <button onClick={() => handleIssueTempPw(u)} disabled={issuingFor === u.user_id} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #fde68a', background: '#fffbeb', fontSize: 11, cursor: 'pointer', color: '#d97706', fontWeight: 600 }}>{issuingFor === u.user_id ? '...' : '🔑 임시비번'}</button>}
                     {canToggle(u) && <button onClick={() => toggleStatus(u)} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #e2e8f0', background: 'white', fontSize: 11, cursor: 'pointer', color: u.status === 'ACTIVE' ? '#dc2626' : '#16a34a' }}>{u.status === 'ACTIVE' ? '정지' : '활성'}</button>}
                   </div>
@@ -257,6 +293,57 @@ export default function Users() {
             </div>
 
             <button onClick={() => setTempPwResult(null)} style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>확인</button>
+          </div>
+        </div>
+      )}
+
+      {/* 로그인 ID 변경 모달 (2026-04-29 추가) */}
+      {loginIdEdit && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }} onClick={() => !savingLoginId && setLoginIdEdit(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 18, padding: 28, width: '100%', maxWidth: 440 }}>
+            <div style={{ textAlign: 'center', marginBottom: 18 }}>
+              <div style={{ fontSize: 36, marginBottom: 6 }}>🆔</div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: '#0f172a' }}>로그인 ID 변경</div>
+              <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>{loginIdEdit.name} <span style={{ color: '#94a3b8' }}>({roleMap[loginIdEdit.role] || loginIdEdit.role})</span></div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>현재 로그인 ID</label>
+              <div style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 14, color: '#475569', fontFamily: 'monospace' }}>{loginIdEdit.login_id}</div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>새 로그인 ID *</label>
+              <input
+                autoFocus
+                value={newLoginId}
+                onChange={e => setNewLoginId(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !savingLoginId) handleSaveLoginId(); }}
+                placeholder="4~50자, 영문/숫자/_/-/."
+                style={{ width: '100%', padding: '11px 14px', borderRadius: 8, border: '1.5px solid #c7d2fe', fontSize: 15, outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' }}
+              />
+              <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>영문 소/대문자, 숫자, 밑줄(_), 하이픈(-), 마침표(.) 만 사용 가능</div>
+            </div>
+
+            <div style={{ background: '#fffbeb', borderRadius: 10, padding: '12px 14px', marginBottom: 18, fontSize: 12, color: '#92400e', lineHeight: 1.7 }}>
+              <strong>⚠️ 안내</strong><br />
+              • 로그인 ID는 로그인 시에만 사용되며, 운행일지 · 콜 · 마일리지 등의 기록에는 영향이 없습니다<br />
+              • 해당 사용자는 <strong>다음 로그인부터 새 ID</strong>를 사용해야 합니다<br />
+              • 비밀번호는 그대로 유지됩니다
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => { setLoginIdEdit(null); setNewLoginId(''); }}
+                disabled={savingLoginId}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 600, cursor: savingLoginId ? 'not-allowed' : 'pointer', opacity: savingLoginId ? 0.6 : 1 }}
+              >취소</button>
+              <button
+                onClick={handleSaveLoginId}
+                disabled={savingLoginId}
+                style={{ flex: 2, padding: '12px 0', borderRadius: 10, border: 'none', background: '#4f46e5', color: 'white', fontSize: 14, fontWeight: 700, cursor: savingLoginId ? 'not-allowed' : 'pointer', opacity: savingLoginId ? 0.7 : 1 }}
+              >{savingLoginId ? '변경 중...' : 'ID 변경'}</button>
+            </div>
           </div>
         </div>
       )}
