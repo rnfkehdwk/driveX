@@ -1,0 +1,11 @@
+# DriveLog 마스터 환경변수 (Vite 빌드 타임용)
+# drivelog-admin/client 와 drivelog-mobile 두 프로젝트가 envDir 설정으로 공유합니다.
+# 이 파일은 .gitignore에 등록되어 있어 git에 올라가지 않습니다.
+#
+# 재생성 이력:
+#   - 2026-04-29 오후: 최초 생성 (envDir 일원화 작업)
+#   - 2026-04-29 밤:   재생성 (어느 시점에 사라져 카카오 키 missing 빌드 발생 → 복구)
+
+# 카카오맵 (필수) — 양양대리(1012) 키, infoData.md 참고
+VITE_KAKAO_REST_KEY=5bfc2766bfe2836aab70ff613c8c05be
+VITE_KAKAO_JS_KEY=b1e43fe40464bf365f6122749187c09a

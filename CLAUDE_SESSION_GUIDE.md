@@ -120,7 +120,7 @@ C:\Drivelog\
 | `rides` | `ride_id` (NOT `id`) |
 | `users` | `user_id` |
 | `calls` | `call_id` |
-| `customer_mileage` | `id` (이건 그냥 id) |
+| `customer_mileage` | `mileage_id` |
 | `partners` | `partner_id` |
 | `companies` | `company_id` |
 
